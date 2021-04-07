@@ -1,3 +1,7 @@
 [workspace]
 
-members = []
+members = [
+    "consensus",
+    "node",
+    "common/bits"
+]
