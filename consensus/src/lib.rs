@@ -1,10 +1,12 @@
 
 use chacha20::{ChaCha8, Key, Nonce};
 use chacha20::cipher::{NewStreamCipher, SyncStreamCipher, SyncStreamCipherSeek};
-use bitvec::{prelude::*, view::AsBits};
+use bitvec::{prelude::*};
+use std::cmp;
+
 
 const param_EXT: u64 = 6;
-const k: u64 = 30;
+const k: u64 = 10;
 const fsize: u64 = param_EXT + k;
 const param_M: u64 = 1 << param_EXT;
 const param_B: u64 = 119;
@@ -13,6 +15,9 @@ const param_BC: u64 = param_B * param_C;
 const param_c1: u64 = 1000;
 const param_c2: u64 = 1000;
 const blocksize_bits: u64 = 512;
+
+type Bits = BitVec<Msb0, u8>;
+type BitsSlice = BitSlice<Msb0, u8>;
 
 fn bucket_id(x: u64) -> u64 {
     (x as f64 / param_BC as f64).floor() as u64
@@ -63,34 +68,44 @@ fn bits_slice(x: u64, start_index: u64, end_index: u64) -> u64 {
 }
 
 fn calculate_f1(x: &BitSlice<Msb0, u8>) -> BitVec<Msb0, u8> {
-    let (q, r) = divmod(x.load_be::<u64>() * k, blocksize_bits);
+    assert!(x.len() == param_M as usize, "x must be 64 bits");
+
+    let num_output_bits = k;
+    let (counter_bit, bits_before_x) = divmod(x.load_be::<u64>() * k, blocksize_bits);
+    let bits_of_x = cmp::min(blocksize_bits - bits_before_x, num_output_bits);
 
     let key = Key::from_slice(b"an example plot seed key of 32b.");
     let nonce = Nonce::from_slice(b"000000000000");
 
     let mut cipher = ChaCha8::new(&key, &nonce);
 
-    cipher.seek(q);
-    let mut ciphertext0 = [0 as u8; blocksize_bits as usize];
+    cipher.seek(counter_bit);
+    let mut ciphertext0 = [0 as u8; (blocksize_bits / 8) as usize];
     cipher.apply_keystream(&mut ciphertext0);
 
-    if r + k <= 512 {
-        let result = ciphertext0.as_bits::<Msb0>().to_bitvec();
-        let mut result = result[r as usize .. (r + k) as usize].to_bitvec();
-        println!("{}", result);
-        result.extend_from_bitslice(&x[..param_M as usize]);
-        println!("{}", result);
-        return result;
-    } else {
+    println!("k={}, bits_before_x={}, counter_bit={}", k, bits_before_x, counter_bit);
+
+    let mut result = if bits_of_x < num_output_bits {
         // Span two blocks
-        cipher.seek(q + 1);
-        let mut ciphertext1 = [0 as u8; blocksize_bits as usize];
+        cipher.seek(counter_bit + 1);
+        let mut ciphertext1 = [0 as u8; (blocksize_bits / 8) as usize];
         cipher.apply_keystream(&mut ciphertext1);
 
-        let mut result = ciphertext0.as_bits::<Msb0>()[r as usize..].to_bitvec();
-        result.extend_from_bitslice::<Msb0, u8>(&ciphertext1.as_bits()[.. (r + k - 512) as usize]);
-        return result;
-    }
+        let mut result = ciphertext0.view_bits()[bits_before_x as usize..].to_bitvec();
+        result.extend_from_bitslice(&ciphertext1.view_bits::<Msb0>()[0..(num_output_bits - bits_of_x) as usize]);
+        result
+    } else {
+        let result = ciphertext0.view_bits::<Msb0>().to_bitvec();
+        result[bits_before_x as usize .. (bits_before_x + num_output_bits) as usize].to_bitvec()
+    };
+
+    result.extend_from_bitslice(&x[..6 as usize]);
+    println!("{}", result);
+    result
+}
+
+fn calculate_bucket(x: &BitSlice<Msb0, u8>) -> (BitVec<Msb0, u8>, u64) {
+    (calculate_f1(x), x.load_be::<u64>())
 }
 
 #[cfg(test)]
@@ -120,9 +135,12 @@ mod tests {
 
     #[test]
     fn test_f1() {
-        let x: u64 = (2 as u64).pow(27) - 3;
+        // for x in 0..(2 as u64).pow(k as u32) {
+            // calculate_f1(&x.to_be_bytes().view_bits());
+        // }
+        let x: u64 = 13271;
         let fx = calculate_f1(&x.to_be_bytes().view_bits());
-        println!("x={}, f(x)={}", x, fx);
+        println!("Len: {}, must be {}", fx.len(), (2 as u64).pow(fsize as u32));
     }
 
     #[test]
