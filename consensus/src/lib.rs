@@ -1,9 +1,7 @@
 
 use chacha20::{ChaCha8, Key, Nonce};
 use chacha20::cipher::{NewStreamCipher, SyncStreamCipher, SyncStreamCipherSeek};
-use bitvec::{prelude::*};
-use std::cmp;
-
+use bitvec::prelude::*;
 
 const param_EXT: u64 = 6;
 const k: u64 = 10;
@@ -106,6 +104,15 @@ fn calculate_bucket(x: &BitSlice<Msb0, u8>) -> (BitVec<Msb0, u8>, u64) {
     (calculate_f1(x), x.load_be::<u64>())
 }
 
+fn fx_blake_hash(y: &BitSlice<Msb0, u8>, l: &BitSlice<Msb0, u8>, r: &BitSlice<Msb0, u8>) -> BitVec<Msb0, u8> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(y.as_raw_slice());
+    hasher.update(l.as_raw_slice());
+    hasher.update(r.as_raw_slice());
+    let hash = hasher.finalize();
+    hash.as_bytes().view_bits().to_bitvec()
+}
+
 #[cfg(test)]
 mod tests {
     use bitvec::prelude::*;
@@ -113,9 +120,8 @@ mod tests {
 
     #[test]
     fn test_bits() {
-        let bytes = (13271 as u32).to_ne_bytes();
-        let bit_slice = bytes.view_bits::<Lsb0>();
-        println!("{}", bit_slice);
+        let num: u64 = 42;
+        assert_eq!(num.to_be_bytes(), num.to_be_bytes().view_bits::<Msb0>().as_raw_slice());
     }
 
     #[test]
@@ -145,5 +151,18 @@ mod tests {
     fn test_bit_slice() {
         let x = 0b100100;
         assert_eq!(0b010, bits_slice(x, 2, 5));
+    }
+
+    #[test]
+    fn test_fx_hash() {
+        let y: u64 = 123;
+        let l: u64 = 123;
+        let r: u64 = 123;
+        let hash = fx_blake_hash(y.to_be_bytes().view_bits(), l.to_be_bytes().view_bits(), r.to_be_bytes().view_bits());
+        let mut val = y.to_be_bytes().to_vec();
+        val.extend_from_slice(&l.to_be_bytes());
+        val.extend_from_slice(&r.to_be_bytes());
+        let hash2 = blake3::hash(&val);
+        assert_eq!(hash2.as_bytes(), hash.as_raw_slice());
     }
 }
