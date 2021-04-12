@@ -2,10 +2,11 @@
 use chacha20::{ChaCha8, Key, Nonce};
 use chacha20::cipher::{NewStreamCipher, SyncStreamCipher, SyncStreamCipherSeek};
 use bitvec::prelude::*;
+use std::cmp;
 
-const param_EXT: u64 = 6;
-const k: u64 = 10;
-const fsize: u64 = param_EXT + k;
+const param_EXT: usize = 6;
+const k: u64 = 16;
+const fsize: usize = param_EXT + k as usize;
 const param_M: u64 = 1 << param_EXT;
 const param_B: u64 = 119;
 const param_C: u64 = 127;
@@ -66,9 +67,10 @@ fn bits_slice(x: u64, start_index: u64, end_index: u64) -> u64 {
 }
 
 fn calculate_f1(x: &BitSlice<Msb0, u8>) -> BitVec<Msb0, u8> {
-    assert!(x.len() == param_M as usize, "x must be 64 bits");
+    assert!(x.len() == k as usize, "x must be k bits");
 
     let (q, r) = divmod(x.load_be::<u64>() * k, blocksize_bits);
+    // println!("x = {}", x);
 
     let key = Key::from_slice(b"an example plot seed key of 32b.");
     let nonce = Nonce::from_slice(b"000000000000");
@@ -79,7 +81,7 @@ fn calculate_f1(x: &BitSlice<Msb0, u8>) -> BitVec<Msb0, u8> {
     let mut ciphertext0 = [0 as u8; (blocksize_bits / 8) as usize];
     cipher.apply_keystream(&mut ciphertext0);
 
-    println!("k={}, bits_before_x={}, counter_bit={}", k, r, q);
+    // println!("k={}, bits_before_x={}, counter_bit={}", k, r, q);
 
     let mut result = if r + k > blocksize_bits {
         // Span two blocks
@@ -94,9 +96,13 @@ fn calculate_f1(x: &BitSlice<Msb0, u8>) -> BitVec<Msb0, u8> {
         let result = ciphertext0.view_bits::<Msb0>().to_bitvec();
         result[r as usize .. (r + k) as usize].to_bitvec()
     };
+    // println!("Cipher: {}", result);
 
-    result.extend_from_bitslice(&x[..6 as usize]);
-    println!("{}", result);
+    result.extend_from_bitslice(&x[..cmp::min(param_EXT, x.len()) as usize]);
+    if x.len() < param_EXT {
+        result.append(&mut bitvec![0; param_EXT - x.len()]);
+    }
+    println!("Result: {}", result);
     result
 }
 
@@ -139,12 +145,12 @@ mod tests {
 
     #[test]
     fn test_f1() {
-        // for x in 0..(2 as u64).pow(k as u32) {
-            // calculate_f1(&x.to_be_bytes().view_bits());
-        // }
-        let x: u64 = 13271;
-        let fx = calculate_f1(&x.to_be_bytes().view_bits());
-        println!("Len: {}, must be {}", fx.len(), (2 as u64).pow(fsize as u32));
+        for x in 0..(2 as u64).pow(k as u32) {
+            calculate_f1(&x.to_be_bytes().view_bits()[(64-k) as usize..]);
+        }
+        // let x: u64 = 65534;
+        // let fx = calculate_f1(&x.to_be_bytes().view_bits());
+        // println!("Len: {}, must be {}", fx.len(), (2 as u64).pow(fsize as u32));
     }
 
     #[test]
