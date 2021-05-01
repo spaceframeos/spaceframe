@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 blake3 = "0.3.7"
-chacha20 = { version = "0.6.0" }
+chacha20 = "0.6.0"
 bitvec = "0.22.1"

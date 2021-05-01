@@ -1,4 +1,6 @@
-use clap::App;
+use clap::{App};
+
+use consensus::init_pos;
 
 fn main() {
     let _matches = App::new("Spaceframe Node")
@@ -6,4 +8,6 @@ fn main() {
         .author("Gil Balsiger <gil.balsiger@gmail.com>")
         .about("Spaceframe binary to create a node")
         .get_matches();
+
+    init_pos();
 }

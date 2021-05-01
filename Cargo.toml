@@ -3,5 +3,4 @@
 members = [
     "consensus",
     "node",
-    "common/bits"
 ]
