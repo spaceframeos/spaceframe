@@ -1,9 +1,7 @@
-
-use chacha20::{ChaCha8, Key, Nonce};
-use chacha20::cipher::{NewStreamCipher, SyncStreamCipher, SyncStreamCipherSeek};
 use bitvec::prelude::*;
-use std::cmp;
-use std::cmp::{max, min};
+use chacha20::cipher::{NewStreamCipher, SyncStreamCipher, SyncStreamCipherSeek};
+use chacha20::{ChaCha8, Key, Nonce};
+use std::cmp::{self, max, min};
 
 const param_EXT: usize = 6;
 const k: u64 = 10;
@@ -41,7 +39,7 @@ fn colla_size(t: u64) -> Option<u64> {
         3 | 7 => Some(2),
         6 => Some(3),
         4 | 5 => Some(4),
-        _ => None
+        _ => None,
     }
 }
 
@@ -99,11 +97,13 @@ fn calculate_f1(x: &BitsSlice) -> Bits {
         cipher.apply_keystream(&mut ciphertext1);
 
         let mut result = ciphertext0.view_bits()[r as usize..].to_bitvec();
-        result.extend_from_bitslice(&ciphertext1.view_bits::<Msb0>()[0..(r + k - blocksize_bits) as usize]);
+        result.extend_from_bitslice(
+            &ciphertext1.view_bits::<Msb0>()[0..(r + k - blocksize_bits) as usize],
+        );
         result
     } else {
         let result = ciphertext0.view_bits::<Msb0>().to_bitvec();
-        result[r as usize .. (r + k) as usize].to_bitvec()
+        result[r as usize..(r + k) as usize].to_bitvec()
     };
 
     result.extend_from_bitslice(&x[..cmp::min(param_EXT, x.len()) as usize]);
@@ -131,11 +131,25 @@ fn fx_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
     hash.as_bytes().view_bits().to_bitvec()
 }
 
+fn verify_prove(x1: u64, x2: u64, challenge: &BitsSlice) -> bool {
+    let x1_bytes = x1.to_be_bytes();
+    let x1_bits = &x1_bytes.view_bits()[64-k as usize..];
+    let x2_bytes = x2.to_be_bytes();
+    let x2_bits = &x2_bytes.view_bits()[64-k as usize..];
+    let f1x1 = calculate_f1(x1_bits);
+    let f1x2 = calculate_f1(x2_bits);
+    if matching(&f1x1, &f1x2) {
+        let f2x1 = &calculate_f2(&x1_bits, &x2_bits, &f1x1)[..k as usize];
+        return f2x1 == challenge;
+    }
+    return false;
+}
+
 pub fn init_pos() {
     let mut table1 = vec![];
     let mut table2 = vec![];
     for x in 0..(2 as u64).pow(k as u32) {
-        let fx = calculate_f1(&x.to_be_bytes().view_bits()[(64-k) as usize..]);
+        let fx = calculate_f1(&x.to_be_bytes().view_bits()[(64 - k) as usize..]);
         table1.push(fx);
     }
     let mut counter = 0;
@@ -148,15 +162,13 @@ pub fn init_pos() {
                 let fx2 = &table1[x2 as usize];
                 if matching(fx1, fx2) {
                     let f2x = calculate_f2(
-                        &x1.to_be_bytes().view_bits()[(64-k) as usize..],
-                        &x2.to_be_bytes().view_bits()[(64-k) as usize..],
-                        fx1
+                        &x1.to_be_bytes().view_bits()[(64 - k) as usize..],
+                        &x2.to_be_bytes().view_bits()[(64 - k) as usize..],
+                        fx1,
                     );
-                    let pos = min(x1, x2);
-                    let offset = max(x1, x2) - pos;
                     // println!("f2x = {}, pos = {}, offset = {}", f2x, pos, offset);
                     counter += 1;
-                    table2.push((f2x, pos, offset));
+                    table2.push((f2x, x1, x2));
 
                     if counter == (2 as u32).pow(k as u32) {
                         break 'outer;
@@ -166,31 +178,40 @@ pub fn init_pos() {
         }
     }
     println!("Count: {}", counter);
-    let chall = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let chall = b"caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let target = &chall.view_bits::<Msb0>()[..k as usize];
-    println!("Target: {}", target);
     let mut proves_count = 0;
-    for x in 0..(2 as u64).pow(k as u32) {
-        if table2[x as usize].0[..k as usize] == target {
+    let mut proves = vec![];
+    for x in table2 {
+        if x.0[..k as usize] == target {
             proves_count += 1;
-            let el = &table2[x as usize];
-            let x1 = &table1[el.1 as usize];
-            let x2 = &table1[el.1 as usize + el.2 as usize];
-            println!("x1 = {}, x2 = {}", x1, x2);
+            let el = &x;
+            let x1 = el.1;
+            let x2 = el.2;
+            proves.push((x1, x2));
+            println!("Prove {}: x1 = {}, x2 = {}", proves_count, x1, x2);
         }
     }
+    println!("Target: {}", target);
     println!("Proves count: {}", proves_count);
+
+    for (index, prove) in proves.into_iter().enumerate() {
+        println!("Prove {}: {}", index, verify_prove(prove.0, prove.1, target));
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bitvec::prelude::*;
     use super::*;
+    use bitvec::prelude::*;
 
     #[test]
     fn test_bits() {
         let num: u64 = 42;
-        assert_eq!(num.to_be_bytes(), num.to_be_bytes().view_bits::<Msb0>().as_raw_slice());
+        assert_eq!(
+            num.to_be_bytes(),
+            num.to_be_bytes().view_bits::<Msb0>().as_raw_slice()
+        );
     }
 
     #[test]
@@ -209,7 +230,7 @@ mod tests {
     #[test]
     fn test_f1() {
         for x in 0..(2 as u64).pow(k as u32) {
-            calculate_f1(&x.to_be_bytes().view_bits()[(64-k) as usize..]);
+            calculate_f1(&x.to_be_bytes().view_bits()[(64 - k) as usize..]);
         }
         // let x: u64 = 65534;
         // let fx = calculate_f1(&x.to_be_bytes().view_bits());
@@ -227,7 +248,11 @@ mod tests {
         let y: u64 = 123;
         let l: u64 = 123;
         let r: u64 = 123;
-        let hash = fx_blake_hash(y.to_be_bytes().view_bits(), l.to_be_bytes().view_bits(), r.to_be_bytes().view_bits());
+        let hash = fx_blake_hash(
+            y.to_be_bytes().view_bits(),
+            l.to_be_bytes().view_bits(),
+            r.to_be_bytes().view_bits(),
+        );
         let mut val = y.to_be_bytes().to_vec();
         val.extend_from_slice(&l.to_be_bytes());
         val.extend_from_slice(&r.to_be_bytes());
