@@ -52,10 +52,10 @@ fn matching(l: &BitsSlice, r: &BitsSlice) -> bool {
     return false;
 }
 
-fn calculate_f1(x: &BitsSlice) -> Bits {
-    assert_eq!(x.len(), K as usize, "x must be k bits");
+fn calculate_f1(x: &BitsSlice, k: usize) -> Bits {
+    assert_eq!(x.len(), k as usize, "x must be k bits");
 
-    let (q, r) = divmod(x.load_be::<u64>() * K as u64, BLOCKSIZE_BITS);
+    let (q, r) = divmod(x.load_be::<u64>() * k as u64, BLOCKSIZE_BITS);
 
     let key = Key::from_slice(b"an example plot seed key of 32bu");
     let nonce = Nonce::from_slice(b"000000000000");
@@ -68,7 +68,7 @@ fn calculate_f1(x: &BitsSlice) -> Bits {
 
     // println!("k={}, bits_before_x={}, counter_bit={}", k, r, q);
 
-    let mut result = if r + K as u64 > BLOCKSIZE_BITS {
+    let mut result = if r + k as u64 > BLOCKSIZE_BITS {
         // Span two blocks
         cipher.seek(q + 1);
         let mut ciphertext1 = [0; (BLOCKSIZE_BITS / 8) as usize];
@@ -76,12 +76,12 @@ fn calculate_f1(x: &BitsSlice) -> Bits {
 
         let mut result = ciphertext0.view_bits()[r as usize..].to_bitvec();
         result.extend_from_bitslice(
-            &ciphertext1.view_bits::<Msb0>()[0..(r + K as u64 - BLOCKSIZE_BITS) as usize],
+            &ciphertext1.view_bits::<Msb0>()[0..(r + k as u64 - BLOCKSIZE_BITS) as usize],
         );
         result
     } else {
         let result = ciphertext0.view_bits::<Msb0>().to_bitvec();
-        result[r as usize..r as usize + K].to_bitvec()
+        result[r as usize..r as usize + k].to_bitvec()
     };
 
     result.extend_from_bitslice(&x[..cmp::min(PARAM_EXT, x.len()) as usize]);
@@ -105,13 +105,13 @@ fn fx_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
     hash.as_bytes().view_bits().to_bitvec()
 }
 
-fn verify_prove(x1: u64, x2: u64, challenge: &BitsSlice) -> bool {
+fn verify_prove(x1: u64, x2: u64, challenge: &BitsSlice, k: usize) -> bool {
     let x1_bytes = x1.to_be_bytes();
     let x1_bits = &x1_bytes.view_bits()[64 - K as usize..];
     let x2_bytes = x2.to_be_bytes();
     let x2_bits = &x2_bytes.view_bits()[64 - K as usize..];
-    let f1x1 = calculate_f1(x1_bits);
-    let f1x2 = calculate_f1(x2_bits);
+    let f1x1 = calculate_f1(x1_bits, k);
+    let f1x2 = calculate_f1(x2_bits, k);
     if matching(&f1x1, &f1x2) {
         let f2x1 = &calculate_f2(&x1_bits, &x2_bits, &f1x1)[..K as usize];
         return f2x1 == challenge;
@@ -119,32 +119,32 @@ fn verify_prove(x1: u64, x2: u64, challenge: &BitsSlice) -> bool {
     return false;
 }
 
-pub fn init_pos() {
+pub fn init_pos(k: usize) {
     let mut table1 = vec![];
     let mut table2 = vec![];
-    for x in 0..(2 as u64).pow(K as u32) {
-        let fx = calculate_f1(&x.to_be_bytes().view_bits()[(64 - K) as usize..]);
+    for x in 0..(2u64).pow(k as u32) {
+        let fx = calculate_f1(&x.to_be_bytes().view_bits()[(64 - k) as usize..], k);
         table1.push(fx);
     }
     let mut counter = 0;
 
     // Table 2
-    'outer: for x1 in 0..(2 as u64).pow(K as u32) {
-        for x2 in x1..(2 as u64).pow(K as u32) {
+    'outer: for x1 in 0..(2 as u64).pow(k as u32) {
+        for x2 in x1..(2 as u64).pow(k as u32) {
             if x1 != x2 {
                 let fx1 = &table1[x1 as usize];
                 let fx2 = &table1[x2 as usize];
                 if matching(fx1, fx2) {
                     let f2x = calculate_f2(
-                        &x1.to_be_bytes().view_bits()[(64 - K) as usize..],
-                        &x2.to_be_bytes().view_bits()[(64 - K) as usize..],
+                        &x1.to_be_bytes().view_bits()[(64 - k) as usize..],
+                        &x2.to_be_bytes().view_bits()[(64 - k) as usize..],
                         fx1,
                     );
                     // println!("f2x = {}, pos = {}, offset = {}", f2x, pos, offset);
                     counter += 1;
                     table2.push((f2x, x1, x2));
 
-                    if counter == (2 as u32).pow(K as u32) {
+                    if counter == (2 as u32).pow(k as u32) {
                         break 'outer;
                     }
                 }
@@ -157,7 +157,7 @@ pub fn init_pos() {
     let mut proves_count = 0;
     let mut proves = vec![];
     for x in table2 {
-        if x.0[..K as usize] == target {
+        if x.0[..k as usize] == target {
             proves_count += 1;
             let el = &x;
             let x1 = el.1;
@@ -170,7 +170,7 @@ pub fn init_pos() {
     println!("Proves count: {}", proves_count);
 
     for (index, prove) in proves.into_iter().enumerate() {
-        println!("Prove {}: {}", index, verify_prove(prove.0, prove.1, target));
+        println!("Prove {}: {}", index, verify_prove(prove.0, prove.1, target, k));
     }
 }
 
@@ -203,17 +203,11 @@ mod tests {
     #[test]
     fn test_f1() {
         for x in 0..(2u64).pow(K as u32) {
-            calculate_f1(&x.to_be_bytes().view_bits()[(64 - K) as usize..]);
+            calculate_f1(&x.to_be_bytes().view_bits()[(64 - K) as usize..], K);
         }
         // let x: u64 = 65534;
         // let fx = calculate_f1(&x.to_be_bytes().view_bits());
         // println!("Len: {}, must be {}", fx.len(), (2 as u64).pow(fsize as u32));
-    }
-
-    #[test]
-    fn test_bit_slice() {
-        let x = 0b100100;
-        assert_eq!(0b010, bits_slice(x, 2, 5));
     }
 
     #[test]
