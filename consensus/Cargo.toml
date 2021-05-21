@@ -1,5 +1,5 @@
 [package]
-name = "consensus"
+name = "spaceframe-consensus"
 version = "0.1.0"
 authors = ["Gil Balsiger <gil.balsiger@gmail.com>"]
 edition = "2018"
@@ -7,6 +7,3 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-blake3 = "0.3.7"
-chacha20 = "0.6.0"
-bitvec = "0.22.1"

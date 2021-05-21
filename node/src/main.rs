@@ -1,6 +1,6 @@
-use clap::{App};
+use clap::App;
 
-use consensus::init_pos;
+use spaceframe_pospace::init_pos;
 
 fn main() {
     let _matches = App::new("Spaceframe Node")
