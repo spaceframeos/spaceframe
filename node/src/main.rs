@@ -1,6 +1,8 @@
+use base64::encode;
 use clap::{App, Arg, SubCommand, crate_authors, crate_name, crate_version};
 
-use spaceframe_pospace::init_pos;
+use rand::{RngCore, rngs::OsRng};
+use spaceframe_pospace::{core::PoSpace};
 
 fn main() {
     let matches = App::new(crate_name!())
@@ -30,7 +32,10 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("init") {
         if let Ok(k) = matches.value_of("space").unwrap().parse::<usize>() {
-            init_pos(k);
+            let mut plot_seed = [0u8; 24];
+            OsRng.fill_bytes(&mut plot_seed);
+            let pos = PoSpace::new(k, &encode(plot_seed));
+            pos.run_phase_1();
         }
     }
 }

@@ -1,6 +1,6 @@
 use bitvec::prelude::*;
 
-use crate::{Bits, BitsSlice, constants::F_SIZE};
+use crate::{Bits, BitsSlice};
 
 pub fn fx_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
     let mut hasher = blake3::Hasher::new();
@@ -12,5 +12,5 @@ pub fn fx_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
 }
 
 pub fn calculate_f2(x1: &BitsSlice, x2: &BitsSlice, f1x: &BitsSlice) -> Bits {
-    fx_blake_hash(x1, x2, f1x)[..F_SIZE].to_bitvec()
+    fx_blake_hash(x1, x2, f1x)[..16].to_bitvec()
 }
