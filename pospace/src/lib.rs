@@ -6,6 +6,7 @@ pub mod f1_calculator;
 pub mod fx_calculator;
 pub mod utils;
 pub mod proofs;
+pub mod collation;
 
 pub type Bits = BitVec<Msb0, u8>;
 pub type BitsSlice = BitSlice<Msb0, u8>;
