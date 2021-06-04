@@ -1,4 +1,4 @@
-use crate::{BitsSlice, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator, utils::{from_bits, to_bits}};
+use crate::{BitsSlice, bits::{from_bits, to_bits}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
 
 #[derive(Debug)]
 pub struct PoSpace {

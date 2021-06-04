@@ -6,7 +6,7 @@ use chacha20::{
     ChaCha8, Key, Nonce,
 };
 
-use crate::{Bits, BitsSlice, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod, from_bits}};
+use crate::{Bits, BitsSlice, bits::from_bits, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
 
 #[derive(Debug, Clone)]
 pub struct F1Calculator {
