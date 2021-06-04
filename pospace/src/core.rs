@@ -115,9 +115,9 @@ impl PoSpace {
         'outer1: for x1 in 0..(2u64).pow(self.k as u32) {
             for x2 in 0..(2u64).pow(self.k as u32) {
                 if x1 != x2 {
-                    if timer.elapsed() >= Duration::from_secs(2) {
+                    if timer.elapsed() >= Duration::from_secs(1) {
                         let percent = ((x1 * total + x2) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete", percent);
+                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
                     let fx1 = &table1[x1 as usize];
@@ -149,7 +149,7 @@ impl PoSpace {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
                         let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete", percent);
+                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
                     let entry1 = &table2[i];
@@ -188,7 +188,7 @@ impl PoSpace {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
                         let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete", percent);
+                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
 

@@ -20,21 +20,19 @@ impl FXCalculator {
 
     pub fn calculate_fn(&self, input: &[&BitsSlice]) -> Bits {
         let half_len = input.len() / 2;
-        if input.len() == 2 {
-            calculate_blake_hash(
-                &self.collate_n(&input[..half_len]).unwrap(),
-                &self.collate_n(&input[half_len..]).unwrap(),
-                &self.f1_calculator.calculate_f1(&input[0]),
-            )[..self.f_size]
-                .to_bitvec()
-        } else {
-            calculate_blake_hash(
-                &self.collate_n(&input[..half_len]).unwrap(),
-                &self.collate_n(&input[half_len..]).unwrap(),
-                &self.calculate_fn(&input[..half_len]),
-            )[..self.f_size]
-                .to_bitvec()
+        let mut first_half: Bits = BitVec::new();
+        let mut last_half: Bits = BitVec::new();
+        for slice in &input[..half_len] {
+            first_half.extend_from_bitslice(slice);
         }
+        for slice in &input[half_len..] {
+            last_half.extend_from_bitslice(slice);
+        }
+        calculate_blake_hash(
+            &self.f1_calculator.calculate_f1(&input[0]),
+            &first_half,
+            &last_half,
+        )[..self.f_size].to_bitvec()
     }
 
     pub fn collate_n(&self, input: &[&BitsSlice]) -> Result<Bits, ()> {
