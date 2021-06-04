@@ -1,3 +1,5 @@
+use std::time::{Instant, Duration};
+
 use crate::{
     bits::{from_bits, to_bits},
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
@@ -106,10 +108,18 @@ impl PoSpace {
 
         let mut counter = 0;
 
+        let mut timer = Instant::now();
+        let total = (2u64).pow(self.k as u32);
+
         // Table 2
         'outer1: for x1 in 0..(2u64).pow(self.k as u32) {
             for x2 in 0..(2u64).pow(self.k as u32) {
                 if x1 != x2 {
+                    if timer.elapsed() >= Duration::from_secs(2) {
+                        let percent = ((x1 * total + x2) as f64 / total.pow(2) as f64) * 100f64;
+                        println!("{:.3}% complete", percent);
+                        timer = Instant::now();
+                    }
                     let fx1 = &table1[x1 as usize];
                     let fx2 = &table1[x2 as usize];
                     if self.matching(fx1, fx2) {
@@ -131,10 +141,17 @@ impl PoSpace {
         println!("Table 2 len: {}", table2.len());
         counter = 0;
 
+        timer = Instant::now();
+
         // Table 3
         'outer2: for i in 0..table2.len() {
             for j in 0..table2.len() {
                 if i != j {
+                    if timer.elapsed() >= Duration::from_secs(2) {
+                        let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+                        println!("{:.3}% complete", percent);
+                        timer = Instant::now();
+                    }
                     let entry1 = &table2[i];
                     let entry2 = &table2[j];
                     let fx1 = &entry1.0;
@@ -163,10 +180,18 @@ impl PoSpace {
         println!("Table 3 len: {}", table3.len());
         counter = 0;
 
+        timer = Instant::now();
+
         // Table 4
         'outer3: for i in 0..table3.len() {
             for j in 0..table3.len() {
                 if i != j {
+                    if timer.elapsed() >= Duration::from_secs(2) {
+                        let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+                        println!("{:.3}% complete", percent);
+                        timer = Instant::now();
+                    }
+
                     let entry1 = &table3[i];
                     let entry2 = &table3[j];
                     let fx1 = &entry1.0;
