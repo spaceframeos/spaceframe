@@ -8,8 +8,8 @@ pub mod utils;
 pub mod proofs;
 pub mod collation;
 
-pub type Bits = BitVec<Msb0, u8>;
-pub type BitsSlice = BitSlice<Msb0, u8>;
+pub type Bits = BitVec<Lsb0, u8>;
+pub type BitsSlice = BitSlice<Lsb0, u8>;
 
 // pub fn init_pos(k: usize) {
 //     let chall = b"caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

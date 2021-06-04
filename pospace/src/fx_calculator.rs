@@ -68,7 +68,7 @@ impl FXCalculator {
                     &self.collate_n(&input[8..16]).unwrap(),
                     &self.calculate_fn(&input[0..8]),
                 )[self.f_size..self.f_size + 3 * self.k]
-                .to_bitvec());
+                    .to_bitvec());
             }
             32 => {
                 return Ok(calculate_blake_hash(
@@ -76,7 +76,7 @@ impl FXCalculator {
                     &self.collate_n(&input[16..32]).unwrap(),
                     &self.calculate_fn(&input[0..16]),
                 )[self.f_size..self.f_size + 2 * self.k]
-                .to_bitvec());
+                    .to_bitvec());
             }
             _ => {
                 return Err(());
@@ -87,9 +87,40 @@ impl FXCalculator {
 
 pub fn calculate_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(y.as_raw_slice());
-    hasher.update(l.as_raw_slice());
-    hasher.update(r.as_raw_slice());
+    let mut input: Bits = BitVec::new();
+    input.extend_from_bitslice(y);
+    input.extend_from_bitslice(l);
+    input.extend_from_bitslice(r);
+    hasher.update(input.as_raw_slice());
     let hash = hasher.finalize();
     hash.as_bytes().view_bits().to_bitvec()
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use crate::utils::{from_bits, to_bits};
+
+//     use super::*;
+//     use rstest::rstest;
+
+//     #[ignore]
+//     #[rstest]
+//     #[case(2, 16, 0xa, 0x204f, 0x20a61a, 0x2af546, 0x44cb204f)]
+//     fn verify_functions(
+//         #[case] t: u8,
+//         #[case] k: u64,
+//         #[case] L: u64,
+//         #[case] R: u64,
+//         #[case] y1: u64,
+//         #[case] y: u64,
+//         #[case] c: u64,
+//     ) {
+//         let y1 = to_bits(y1, k as usize + 6);
+//         let L = to_bits(L, k as usize);
+//         let R = to_bits(R, k as usize);
+//         let res = &calculate_blake_hash(&y1, &L, &R)[..k as usize + PARAM_EXT];
+//         println!("{}", &res[..k as usize + 6]);
+//         println!("{}", y);
+//         assert_eq!(from_bits(&res), y);
+//     }
+// }

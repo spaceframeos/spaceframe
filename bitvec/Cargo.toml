@@ -1,5 +1,5 @@
 [package]
-name = "spaceframe-pospace"
+name = "bitvec"
 version = "0.1.0"
 authors = ["Gil Balsiger <gil.balsiger@gmail.com>"]
 edition = "2018"
@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitvec = "0.22.1"
 blake3 = "0.3.7"
 chacha20 = "0.7.1"
-bitvec = "0.22.1"
-rstest = "0.10.0"

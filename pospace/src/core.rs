@@ -1,14 +1,4 @@
-use std::num::Wrapping;
-
-use bitvec::prelude::*;
-
-use crate::{
-    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
-    f1_calculator::F1Calculator,
-    fx_calculator::FXCalculator,
-    utils::{b_id, bucket_id, c_id},
-    BitsSlice,
-};
+use crate::{BitsSlice, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator, utils::{from_bits, to_bits}};
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -72,8 +62,8 @@ impl PoSpace {
         let k_b = PARAM_B as i64;
         let k_c = PARAM_C as i64;
 
-        let yl = l.load_be::<u64>() as i64;
-        let yr = r.load_be::<u64>() as i64;
+        let yl = from_bits(l) as i64;
+        let yr = from_bits(r) as i64;
 
         let bl = yl / k_bc;
         let br = yr / k_bc;
@@ -103,11 +93,11 @@ impl PoSpace {
         for x in 0..(2u64).pow(self.k as u32) {
             let fx = self
                 .f1_calculator
-                .calculate_f1(&x.to_be_bytes().view_bits()[(64 - self.k) as usize..]);
-            println!("Fx: {}", fx);
+                .calculate_f1(&to_bits(x, self.k));
             table1.push(fx);
         }
         println!("Table 1 len: {}", table1.len());
+
         let mut counter = 0;
 
         // Table 2
@@ -118,8 +108,8 @@ impl PoSpace {
                     let fx2 = &table1[x2 as usize];
                     if self.matching(fx1, fx2) {
                         let f2x = self.fx_calculator.calculate_fn(&[
-                            &x1.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-                            &x2.to_be_bytes().view_bits()[(64 - self.k) as usize..],
+                            &to_bits(x1, self.k),
+                            &to_bits(x1, self.k),
                         ]);
                         // println!("f2x = {}, x1 = {}, x2 = {}", f2x, x1, x2);
                         counter += 1;
@@ -132,6 +122,9 @@ impl PoSpace {
                 }
             }
         }
+
+        println!("Table 2 len: {}", table2.len());
+        counter = 0;
 
         // Table 3
         'outer2: for i in 0..table2.len() {
@@ -146,10 +139,10 @@ impl PoSpace {
 
                     if self.matching(fx1, fx2) {
                         let f2x = self.fx_calculator.calculate_fn(&[
-                            &entry1.1.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-                            &entry1.2.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-                            &entry2.1.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-                            &entry2.2.to_be_bytes().view_bits()[(64 - self.k) as usize..],
+                            &to_bits(entry1.1, self.k),
+                            &to_bits(entry1.2, self.k),
+                            &to_bits(entry2.1, self.k),
+                            &to_bits(entry2.2, self.k),
                         ]);
                         counter += 1;
                         table3.push((f2x, entry1.1, entry1.2, entry2.1, entry2.2));
@@ -161,8 +154,7 @@ impl PoSpace {
                 }
             }
         }
-
-        println!("Table 2 len: {}", table2.len());
+        
         println!("Table 3 len: {}", table3.len());
 
         // Table 4
