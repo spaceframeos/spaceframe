@@ -1,4 +1,10 @@
-use crate::{BitsSlice, bits::{from_bits, to_bits}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
+use crate::{
+    bits::{from_bits, to_bits},
+    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
+    f1_calculator::F1Calculator,
+    fx_calculator::FXCalculator,
+    BitsSlice,
+};
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -29,7 +35,7 @@ impl PoSpace {
     ///         if ((((yr % kBC) / kC - ((yl % kBC) / kC)) - m) % kB == 0) {
     ///             int64_t c_diff = 2 * m + bl % 2;
     ///             c_diff *= c_diff;
-    /// 
+    ///
     ///             if ((((yr % kBC) % kC - ((yl % kBC) % kC)) - c_diff) % kC == 0) {
     ///                 return true;
     ///             }
@@ -90,10 +96,10 @@ impl PoSpace {
         let mut table1 = Vec::new();
         let mut table2 = Vec::new();
         let mut table3 = Vec::new();
+        let mut table4 = Vec::new();
+
         for x in 0..(2u64).pow(self.k as u32) {
-            let fx = self
-                .f1_calculator
-                .calculate_f1(&to_bits(x, self.k));
+            let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k));
             table1.push(fx);
         }
         println!("Table 1 len: {}", table1.len());
@@ -107,10 +113,9 @@ impl PoSpace {
                     let fx1 = &table1[x1 as usize];
                     let fx2 = &table1[x2 as usize];
                     if self.matching(fx1, fx2) {
-                        let f2x = self.fx_calculator.calculate_fn(&[
-                            &to_bits(x1, self.k),
-                            &to_bits(x1, self.k),
-                        ]);
+                        let f2x = self
+                            .fx_calculator
+                            .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)]);
                         // println!("f2x = {}, x1 = {}, x2 = {}", f2x, x1, x2);
                         counter += 1;
                         table2.push((f2x, x1, x2));
@@ -154,40 +159,43 @@ impl PoSpace {
                 }
             }
         }
-        
+
         println!("Table 3 len: {}", table3.len());
+        counter = 0;
 
         // Table 4
-        // 'outer3: for i in 0..table3.len() {
-        //     for j in 0..table3.len() {
-        //         if i != j {
-        //             let entry1 = &table3[i];
-        //             let entry2 = &table3[j];
-        //             let fx1 = &entry1.0;
-        //             let fx2 = &entry1.0;
+        'outer3: for i in 0..table3.len() {
+            for j in 0..table3.len() {
+                if i != j {
+                    let entry1 = &table3[i];
+                    let entry2 = &table3[j];
+                    let fx1 = &entry1.0;
+                    let fx2 = &entry2.0;
 
-        //             if matching(fx1, fx2) {
-        //                 let f2x = calculate_fn(
-        //                     &[
-        //                         &entry1.1.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry1.2.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry1.3.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry1.4.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry2.1.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry2.2.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry2.3.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                         &entry2.4.to_be_bytes().view_bits()[(64 - self.k) as usize..],
-        //                     ],
-        //                 );
-        //                 counter += 1;
-        //                 // TODO Push in table 4
+                    if self.matching(fx1, fx2) {
+                        let f2x = self.fx_calculator.calculate_fn(&[
+                            &to_bits(entry1.1, self.k),
+                            &to_bits(entry1.2, self.k),
+                            &to_bits(entry1.3, self.k),
+                            &to_bits(entry1.4, self.k),
+                            &to_bits(entry2.1, self.k),
+                            &to_bits(entry2.2, self.k),
+                            &to_bits(entry2.3, self.k),
+                            &to_bits(entry2.4, self.k),
+                        ]);
+                        counter += 1;
+                        table4.push((
+                            f2x, entry1.1, entry1.2, entry1.3, entry1.4, entry2.1, entry1.2,
+                            entry1.3, entry1.4,
+                        ));
 
-        //                 if counter == (2u64).pow(self.k as u32) {
-        //                     break 'outer3;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+                        if counter == (2u64).pow(self.k as u32) {
+                            break 'outer3;
+                        }
+                    }
+                }
+            }
+        }
+        println!("Table 4 len: {}", table4.len());
     }
 }
