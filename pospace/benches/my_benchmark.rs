@@ -1,6 +1,6 @@
 use bitvec::{bitvec, order::Lsb0};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use spaceframe_pospace::{bits::{from_bits, to_bits}, fx_calculator::{calculate_blake_hash, FXCalculator}};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use spaceframe_pospace::{bits::{BitsWrapper, from_bits, to_bits}, core::PoSpace, fx_calculator::{calculate_blake_hash, FXCalculator}};
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("blake3", |b| {
@@ -39,9 +39,20 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("from_bits", |b| {
+    let input = bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1];
+
+    c.bench_with_input(BenchmarkId::new("from_bits", &input), &input, |b, vec| {
         b.iter(|| {
-            from_bits(black_box(&bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1]));
+            from_bits(vec);
+        })
+    });
+
+    c.bench_function("matching", |b| {
+        let pospace = PoSpace::new(14, b"some key");
+        let l = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1]);
+        let r = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0]);
+        b.iter(|| {
+            pospace.matching(&l, &r);
         })
     });
 }

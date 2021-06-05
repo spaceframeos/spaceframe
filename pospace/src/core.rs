@@ -1,11 +1,10 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use crate::{
-    bits::{from_bits, to_bits},
+    bits::{to_bits, BitsWrapper},
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    BitsSlice,
 };
 
 #[derive(Debug)]
@@ -46,16 +45,16 @@ impl PoSpace {
     ///     return false;
     /// }
     /// ```
-    pub fn matching(&self, l: &BitsSlice, r: &BitsSlice) -> bool {
+    pub fn matching(&self, l: &BitsWrapper, r: &BitsWrapper) -> bool {
         assert_eq!(
             self.k + PARAM_EXT,
-            l.len(),
+            l.bits.len(),
             "l must be {} bits",
             self.k + PARAM_EXT
         );
         assert_eq!(
             self.k + PARAM_EXT,
-            r.len(),
+            r.bits.len(),
             "r must be {} bits",
             self.k + PARAM_EXT
         );
@@ -70,8 +69,8 @@ impl PoSpace {
         let k_b = PARAM_B as i64;
         let k_c = PARAM_C as i64;
 
-        let yl = from_bits(l) as i64;
-        let yr = from_bits(r) as i64;
+        let yl = l.value as i64;
+        let yr = r.value as i64;
 
         let bl = yl / k_bc;
         let br = yr / k_bc;
@@ -102,7 +101,7 @@ impl PoSpace {
 
         for x in 0..(2u64).pow(self.k as u32) {
             let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k));
-            table1.push(fx);
+            table1.push(BitsWrapper::new(fx));
         }
         println!("Table 1 len: {}", table1.len());
 
@@ -117,7 +116,11 @@ impl PoSpace {
                 if x1 != x2 {
                     if timer.elapsed() >= Duration::from_secs(1) {
                         let percent = ((x1 * total + x2) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.2}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
+                        println!(
+                            "{:.2}% complete, table fill: {:.2}%",
+                            percent,
+                            table2.len() as f64 / total as f64 * 100.0
+                        );
                         timer = Instant::now();
                     }
                     let fx1 = &table1[x1 as usize];
@@ -127,7 +130,7 @@ impl PoSpace {
                             .fx_calculator
                             .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)]);
                         counter += 1;
-                        table2.push((f2x, x1, x2));
+                        table2.push((BitsWrapper::new(f2x), x1, x2));
 
                         if counter == (2u64).pow(self.k as u32) {
                             break 'outer1;
@@ -137,7 +140,11 @@ impl PoSpace {
             }
         }
 
-        println!("Table 2 len: {} ({:.2}%)", table2.len(), table2.len() as f64 / total as f64 * 100.0);
+        println!(
+            "Table 2 len: {} ({:.2}%)",
+            table2.len(),
+            table2.len() as f64 / total as f64 * 100.0
+        );
         counter = 0;
 
         timer = Instant::now();
@@ -147,8 +154,13 @@ impl PoSpace {
             for j in 0..table2.len() {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
-                        let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.2}% complete, table fill: {:.2}%", percent, table3.len() as f64 / total as f64 * 100.0);
+                        let percent =
+                            ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+                        println!(
+                            "{:.2}% complete, table fill: {:.2}%",
+                            percent,
+                            table3.len() as f64 / total as f64 * 100.0
+                        );
                         timer = Instant::now();
                     }
                     let entry1 = &table2[i];
@@ -164,7 +176,13 @@ impl PoSpace {
                             &to_bits(entry2.2, self.k),
                         ]);
                         counter += 1;
-                        table3.push((f2x, entry1.1, entry1.2, entry2.1, entry2.2));
+                        table3.push((
+                            BitsWrapper::new(f2x),
+                            entry1.1,
+                            entry1.2,
+                            entry2.1,
+                            entry2.2,
+                        ));
 
                         if counter == (2u64).pow(self.k as u32) {
                             break 'outer2;
@@ -174,7 +192,11 @@ impl PoSpace {
             }
         }
 
-        println!("Table 3 len: {} ({:.2}%)", table3.len(), table3.len() as f64 / total as f64 * 100.0);
+        println!(
+            "Table 3 len: {} ({:.2}%)",
+            table3.len(),
+            table3.len() as f64 / total as f64 * 100.0
+        );
         counter = 0;
 
         timer = Instant::now();
@@ -184,8 +206,13 @@ impl PoSpace {
             for j in 0..table3.len() {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
-                        let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.2}% complete, table fill: {:.2}%", percent, table4.len() as f64 / total as f64 * 100.0);
+                        let percent =
+                            ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+                        println!(
+                            "{:.2}% complete, table fill: {:.2}%",
+                            percent,
+                            table4.len() as f64 / total as f64 * 100.0
+                        );
                         timer = Instant::now();
                     }
 
@@ -207,8 +234,15 @@ impl PoSpace {
                         ]);
                         counter += 1;
                         table4.push((
-                            f2x, entry1.1, entry1.2, entry1.3, entry1.4, entry2.1, entry1.2,
-                            entry1.3, entry1.4,
+                            BitsWrapper::new(f2x),
+                            entry1.1,
+                            entry1.2,
+                            entry1.3,
+                            entry1.4,
+                            entry2.1,
+                            entry1.2,
+                            entry1.3,
+                            entry1.4,
                         ));
 
                         if counter == (2u64).pow(self.k as u32) {
@@ -218,6 +252,10 @@ impl PoSpace {
                 }
             }
         }
-        println!("Table 4 len: {} ({:.2}%)", table4.len(), table4.len() as f64 / total as f64 * 100.0);
+        println!(
+            "Table 4 len: {} ({:.2}%)",
+            table4.len(),
+            table4.len() as f64 / total as f64 * 100.0
+        );
     }
 }

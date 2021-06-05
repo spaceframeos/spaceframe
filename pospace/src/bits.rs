@@ -2,6 +2,21 @@ use bitvec::prelude::*;
 
 use crate::{Bits, BitsSlice};
 
+#[derive(Debug)]
+pub struct BitsWrapper {
+    pub bits: Bits,
+    pub value: u64,
+}
+
+impl BitsWrapper {
+    pub fn new(bits: Bits) -> Self {
+        BitsWrapper {
+            value: bits.load_le(),
+            bits,
+        }
+    }
+}
+
 pub fn to_bits(input: u64, size: usize) -> Bits {
     let mut input_bits = input.to_le_bytes().view_bits::<Lsb0>()[..size].to_bitvec();
     input_bits.reverse();
