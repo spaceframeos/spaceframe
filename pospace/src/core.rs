@@ -1,8 +1,5 @@
 use rayon::prelude::*;
-use std::{
-    sync::mpsc::channel,
-    time::{Duration, Instant},
-};
+use std::{sync::{Mutex, atomic::AtomicU64, mpsc::channel}, time::{Duration, Instant}};
 
 use crate::{
     bits::{to_bits, BitsWrapper},
@@ -10,6 +7,12 @@ use crate::{
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
 };
+
+pub struct PlotEntry {
+    pub bits_wrapper: BitsWrapper,
+    pub x1: u64,
+    pub x2: u64,
+}
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -98,9 +101,8 @@ impl PoSpace {
     }
 
     pub fn run_phase_1(&self) {
-        let mut table2 = Vec::new();
-        let mut table3 = Vec::new();
-        let mut table4 = Vec::new();
+        // let mut table3 = Vec::new();
+        // let mut table4 = Vec::new();
 
         let (sender, receiver) = channel();
 
@@ -114,174 +116,171 @@ impl PoSpace {
         let table1: Vec<BitsWrapper> = receiver.iter().collect();
         println!("Table 1 len: {}", table1.len());
 
-        let mut counter = 0;
+        let counter = Mutex::new(0u64);
 
-        let mut timer = Instant::now();
+        // let mut timer = Instant::now();
         let total = (2u64).pow(self.k as u32);
 
-        // Table 2
-        'outer1: for x1 in 0..(2u64).pow(self.k as u32) {
-            for x2 in 0..(2u64).pow(self.k as u32) {
-                if x1 != x2 {
-                    if timer.elapsed() >= Duration::from_secs(1) {
-                        let percent = ((x1 * total + x2) as f64 / total.pow(2) as f64) * 100f64;
-                        println!(
-                            "{:.2}% complete, table fill: {:.2}%",
-                            percent,
-                            table2.len() as f64 / total as f64 * 100.0
-                        );
-                        timer = Instant::now();
-                    }
-                    let fx1 = &table1[x1 as usize];
-                    let fx2 = &table1[x2 as usize];
-                    if self.matching(fx1, fx2) {
-                        let f2x = self
-                            .fx_calculator
-                            .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)], &fx1.bits);
-                        counter += 1;
-                        table2.push((BitsWrapper::new(f2x), x1, x2));
+        let (sender, receiver) = channel();
 
-                        if counter == (2u64).pow(self.k as u32) {
-                            break 'outer1;
+        (0..(2u64).pow(self.k as u32))
+            .into_par_iter()
+            .for_each_with(sender, |s, i| {
+                for j in 0..(2u64).pow(self.k as u32) {
+                    if i != j {
+                        let fx1 = &table1[i as usize];
+                        let fx2 = &table1[j as usize];
+                        if self.matching(fx1, fx2) {
+                            let f2x = self.fx_calculator.calculate_fn(
+                                &[&to_bits(i, self.k), &to_bits(i, self.k)],
+                                &fx1.bits,
+                            );
+                            // counter += 1;
+                            let mut guard = counter.lock().unwrap();
+                            *guard += 1;
+                            s.send((BitsWrapper::new(f2x), i, j)).unwrap();
                         }
                     }
                 }
-            }
-        }
+            });
+
+        let table2: Vec<(BitsWrapper, u64, u64)> = receiver.iter().collect();
+
+        println!("Count: {}", counter.lock().unwrap());
 
         println!(
             "Table 2 len: {} ({:.2}%)",
             table2.len(),
             table2.len() as f64 / total as f64 * 100.0
         );
-        counter = 0;
+        // counter = 0;
 
-        timer = Instant::now();
+        // timer = Instant::now();
 
         // Table 3
-        'outer2: for i in 0..table2.len() {
-            for j in 0..table2.len() {
-                if i != j {
-                    if timer.elapsed() >= Duration::from_secs(2) {
-                        let percent =
-                            ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!(
-                            "{:.2}% complete, table fill: {:.2}%",
-                            percent,
-                            table3.len() as f64 / total as f64 * 100.0
-                        );
-                        timer = Instant::now();
-                    }
-                    let entry1 = &table2[i];
-                    let entry2 = &table2[j];
-                    let fx1 = &entry1.0;
-                    let fx2 = &entry2.0;
+        // 'outer2: for i in 0..table2.len() {
+        //     for j in 0..table2.len() {
+        //         if i != j {
+        //             if timer.elapsed() >= Duration::from_secs(2) {
+        //                 let percent =
+        //                     ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+        //                 println!(
+        //                     "{:.2}% complete, table fill: {:.2}%",
+        //                     percent,
+        //                     table3.len() as f64 / total as f64 * 100.0
+        //                 );
+        //                 timer = Instant::now();
+        //             }
+        //             let entry1 = &table2[i];
+        //             let entry2 = &table2[j];
+        //             let fx1 = &entry1.0;
+        //             let fx2 = &entry2.0;
 
-                    if self.matching(fx1, fx2) {
-                        let f2x = self.fx_calculator.calculate_fn(
-                            &[
-                                &to_bits(entry1.1, self.k),
-                                &to_bits(entry1.2, self.k),
-                                &to_bits(entry2.1, self.k),
-                                &to_bits(entry2.2, self.k),
-                            ],
-                            &fx1.bits,
-                        );
-                        counter += 1;
-                        table3.push((
-                            BitsWrapper::new(f2x),
-                            entry1.1,
-                            entry1.2,
-                            entry2.1,
-                            entry2.2,
-                        ));
+        //             if self.matching(fx1, fx2) {
+        //                 let f2x = self.fx_calculator.calculate_fn(
+        //                     &[
+        //                         &to_bits(entry1.1, self.k),
+        //                         &to_bits(entry1.2, self.k),
+        //                         &to_bits(entry2.1, self.k),
+        //                         &to_bits(entry2.2, self.k),
+        //                     ],
+        //                     &fx1.bits,
+        //                 );
+        //                 counter += 1;
+        //                 table3.push((
+        //                     BitsWrapper::new(f2x),
+        //                     entry1.1,
+        //                     entry1.2,
+        //                     entry2.1,
+        //                     entry2.2,
+        //                 ));
 
-                        if counter == (2u64).pow(self.k as u32) {
-                            break 'outer2;
-                        }
-                    }
-                }
-            }
-        }
+        //                 if counter == (2u64).pow(self.k as u32) {
+        //                     break 'outer2;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
-        println!(
-            "Table 3 len: {} ({:.2}%)",
-            table3.len(),
-            table3.len() as f64 / total as f64 * 100.0
-        );
-        counter = 0;
+        // println!(
+        //     "Table 3 len: {} ({:.2}%)",
+        //     table3.len(),
+        //     table3.len() as f64 / total as f64 * 100.0
+        // );
+        // counter = 0;
 
-        timer = Instant::now();
+        // timer = Instant::now();
 
-        // Table 4
-        'outer3: for i in 0..table3.len() {
-            for j in 0..table3.len() {
-                if i != j {
-                    if timer.elapsed() >= Duration::from_secs(2) {
-                        let percent =
-                            ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!(
-                            "{:.2}% complete, table fill: {:.2}%",
-                            percent,
-                            table4.len() as f64 / total as f64 * 100.0
-                        );
-                        timer = Instant::now();
-                    }
+        // // Table 4
+        // 'outer3: for i in 0..table3.len() {
+        //     for j in 0..table3.len() {
+        //         if i != j {
+        //             if timer.elapsed() >= Duration::from_secs(2) {
+        //                 let percent =
+        //                     ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
+        //                 println!(
+        //                     "{:.2}% complete, table fill: {:.2}%",
+        //                     percent,
+        //                     table4.len() as f64 / total as f64 * 100.0
+        //                 );
+        //                 timer = Instant::now();
+        //             }
 
-                    let entry1 = &table3[i];
-                    let entry2 = &table3[j];
-                    let fx1 = &entry1.0;
-                    let fx2 = &entry2.0;
+        //             let entry1 = &table3[i];
+        //             let entry2 = &table3[j];
+        //             let fx1 = &entry1.0;
+        //             let fx2 = &entry2.0;
 
-                    if self.matching(fx1, fx2) {
-                        let f2x = self.fx_calculator.calculate_fn(
-                            &[
-                                &to_bits(entry1.1, self.k),
-                                &to_bits(entry1.2, self.k),
-                                &to_bits(entry1.3, self.k),
-                                &to_bits(entry1.4, self.k),
-                                &to_bits(entry2.1, self.k),
-                                &to_bits(entry2.2, self.k),
-                                &to_bits(entry2.3, self.k),
-                                &to_bits(entry2.4, self.k),
-                            ],
-                            &fx1.bits,
-                        );
-                        counter += 1;
-                        table4.push((
-                            BitsWrapper::new(f2x),
-                            entry1.1,
-                            entry1.2,
-                            entry1.3,
-                            entry1.4,
-                            entry2.1,
-                            entry1.2,
-                            entry1.3,
-                            entry1.4,
-                        ));
+        //             if self.matching(fx1, fx2) {
+        //                 let f2x = self.fx_calculator.calculate_fn(
+        //                     &[
+        //                         &to_bits(entry1.1, self.k),
+        //                         &to_bits(entry1.2, self.k),
+        //                         &to_bits(entry1.3, self.k),
+        //                         &to_bits(entry1.4, self.k),
+        //                         &to_bits(entry2.1, self.k),
+        //                         &to_bits(entry2.2, self.k),
+        //                         &to_bits(entry2.3, self.k),
+        //                         &to_bits(entry2.4, self.k),
+        //                     ],
+        //                     &fx1.bits,
+        //                 );
+        //                 counter += 1;
+        //                 table4.push((
+        //                     BitsWrapper::new(f2x),
+        //                     entry1.1,
+        //                     entry1.2,
+        //                     entry1.3,
+        //                     entry1.4,
+        //                     entry2.1,
+        //                     entry1.2,
+        //                     entry1.3,
+        //                     entry1.4,
+        //                 ));
 
-                        if counter == (2u64).pow(self.k as u32) {
-                            break 'outer3;
-                        }
-                    }
-                }
-            }
-        }
+        //                 if counter == (2u64).pow(self.k as u32) {
+        //                     break 'outer3;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
         println!("\nFinal tables:");
         println!(
             "Table 2 len: {} ({:.2}%)",
             table2.len(),
             table2.len() as f64 / total as f64 * 100.0
         );
-        println!(
-            "Table 3 len: {} ({:.2}%)",
-            table3.len(),
-            table3.len() as f64 / total as f64 * 100.0
-        );
-        println!(
-            "Table 4 len: {} ({:.2}%)",
-            table4.len(),
-            table4.len() as f64 / total as f64 * 100.0
-        );
+        // println!(
+        //     "Table 3 len: {} ({:.2}%)",
+        //     table3.len(),
+        //     table3.len() as f64 / total as f64 * 100.0
+        // );
+        // println!(
+        //     "Table 4 len: {} ({:.2}%)",
+        //     table4.len(),
+        //     table4.len() as f64 / total as f64 * 100.0
+        // );
     }
 }
