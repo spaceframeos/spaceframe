@@ -11,6 +11,7 @@ blake3 = "0.3.7"
 chacha20 = "0.7.1"
 bitvec = "0.22.1"
 rstest = "0.10.0"
+rayon = "1.5.1"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"] }

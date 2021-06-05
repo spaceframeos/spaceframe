@@ -1,4 +1,8 @@
-use std::time::{Duration, Instant};
+use rayon::prelude::*;
+use std::{
+    sync::mpsc::channel,
+    time::{Duration, Instant},
+};
 
 use crate::{
     bits::{to_bits, BitsWrapper},
@@ -94,15 +98,20 @@ impl PoSpace {
     }
 
     pub fn run_phase_1(&self) {
-        let mut table1 = Vec::new();
         let mut table2 = Vec::new();
         let mut table3 = Vec::new();
         let mut table4 = Vec::new();
 
-        for x in 0..(2u64).pow(self.k as u32) {
-            let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k), x);
-            table1.push(BitsWrapper::new(fx));
-        }
+        let (sender, receiver) = channel();
+
+        (0..(2u64).pow(self.k as u32))
+            .into_par_iter()
+            .for_each_with(sender, |s, x| {
+                let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k), x);
+                s.send(BitsWrapper::new(fx)).unwrap();
+            });
+
+        let table1: Vec<BitsWrapper> = receiver.iter().collect();
         println!("Table 1 len: {}", table1.len());
 
         let mut counter = 0;
@@ -258,6 +267,7 @@ impl PoSpace {
                 }
             }
         }
+        println!("\nFinal tables:");
         println!(
             "Table 2 len: {} ({:.2}%)",
             table2.len(),

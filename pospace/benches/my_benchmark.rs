@@ -50,13 +50,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let mut bits_group = c.benchmark_group("bits");
-    let input = bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1];
     bits_group.bench_function("to_bits", |b| {
         b.iter(|| {
             to_bits(black_box(0xabcd), black_box(16));
         })
     });
     bits_group.bench_function("from_bits", |b| {
+        let input = bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1];
         b.iter(|| {
             from_bits(black_box(&input));
         })
