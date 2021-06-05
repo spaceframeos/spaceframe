@@ -100,7 +100,7 @@ impl PoSpace {
         let mut table4 = Vec::new();
 
         for x in 0..(2u64).pow(self.k as u32) {
-            let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k));
+            let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k), x);
             table1.push(BitsWrapper::new(fx));
         }
         println!("Table 1 len: {}", table1.len());
@@ -128,7 +128,7 @@ impl PoSpace {
                     if self.matching(fx1, fx2) {
                         let f2x = self
                             .fx_calculator
-                            .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)]);
+                            .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)], &fx1.bits);
                         counter += 1;
                         table2.push((BitsWrapper::new(f2x), x1, x2));
 
@@ -169,12 +169,15 @@ impl PoSpace {
                     let fx2 = &entry2.0;
 
                     if self.matching(fx1, fx2) {
-                        let f2x = self.fx_calculator.calculate_fn(&[
-                            &to_bits(entry1.1, self.k),
-                            &to_bits(entry1.2, self.k),
-                            &to_bits(entry2.1, self.k),
-                            &to_bits(entry2.2, self.k),
-                        ]);
+                        let f2x = self.fx_calculator.calculate_fn(
+                            &[
+                                &to_bits(entry1.1, self.k),
+                                &to_bits(entry1.2, self.k),
+                                &to_bits(entry2.1, self.k),
+                                &to_bits(entry2.2, self.k),
+                            ],
+                            &fx1.bits,
+                        );
                         counter += 1;
                         table3.push((
                             BitsWrapper::new(f2x),
@@ -222,16 +225,19 @@ impl PoSpace {
                     let fx2 = &entry2.0;
 
                     if self.matching(fx1, fx2) {
-                        let f2x = self.fx_calculator.calculate_fn(&[
-                            &to_bits(entry1.1, self.k),
-                            &to_bits(entry1.2, self.k),
-                            &to_bits(entry1.3, self.k),
-                            &to_bits(entry1.4, self.k),
-                            &to_bits(entry2.1, self.k),
-                            &to_bits(entry2.2, self.k),
-                            &to_bits(entry2.3, self.k),
-                            &to_bits(entry2.4, self.k),
-                        ]);
+                        let f2x = self.fx_calculator.calculate_fn(
+                            &[
+                                &to_bits(entry1.1, self.k),
+                                &to_bits(entry1.2, self.k),
+                                &to_bits(entry1.3, self.k),
+                                &to_bits(entry1.4, self.k),
+                                &to_bits(entry2.1, self.k),
+                                &to_bits(entry2.2, self.k),
+                                &to_bits(entry2.3, self.k),
+                                &to_bits(entry2.4, self.k),
+                            ],
+                            &fx1.bits,
+                        );
                         counter += 1;
                         table4.push((
                             BitsWrapper::new(f2x),
@@ -252,6 +258,16 @@ impl PoSpace {
                 }
             }
         }
+        println!(
+            "Table 2 len: {} ({:.2}%)",
+            table2.len(),
+            table2.len() as f64 / total as f64 * 100.0
+        );
+        println!(
+            "Table 3 len: {} ({:.2}%)",
+            table3.len(),
+            table3.len() as f64 / total as f64 * 100.0
+        );
         println!(
             "Table 4 len: {} ({:.2}%)",
             table4.len(),

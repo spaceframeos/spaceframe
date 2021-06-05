@@ -6,7 +6,7 @@ use chacha20::{
     ChaCha8, Key, Nonce,
 };
 
-use crate::{Bits, BitsSlice, bits::from_bits, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
+use crate::{Bits, BitsSlice, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
 
 #[derive(Debug, Clone)]
 pub struct F1Calculator {
@@ -22,10 +22,10 @@ impl F1Calculator {
         }
     }
 
-    pub fn calculate_f1(&self, x: &BitsSlice) -> Bits {
+    pub fn calculate_f1(&self, x: &BitsSlice, x_val: u64) -> Bits {
         assert_eq!(x.len(), self.k, "x must be k bits");
 
-        let (q, r) = divmod(from_bits(x) * self.k as u64, STATE_SIZE_BITS as u64);
+        let (q, r) = divmod(x_val * self.k as u64, STATE_SIZE_BITS as u64);
 
         let key = Key::from_slice(self.plot_seed.as_slice());
         let nonce = Nonce::from_slice(b"000000000000");

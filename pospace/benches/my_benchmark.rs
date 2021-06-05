@@ -22,8 +22,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let fx_calculator = FXCalculator::new(10);
         let in_a = to_bits(0xab, 10);
         let in_b = to_bits(0xcd, 10);
+        let in_c = to_bits(0xef, 10);
         b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b]));
+            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b]), black_box( &in_c));
         })
     });
 
@@ -33,8 +34,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let in_b = to_bits(0xcdef, 16);
         let in_c = to_bits(0x1234, 16);
         let in_d = to_bits(0x5678, 16);
+        let in_e = to_bits(0xef, 10);
         b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b, &in_c, &in_d]));
+            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b, &in_c, &in_d]),  &in_e);
         })
     });
 

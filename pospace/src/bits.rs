@@ -11,7 +11,7 @@ pub struct BitsWrapper {
 impl BitsWrapper {
     pub fn new(bits: Bits) -> Self {
         BitsWrapper {
-            value: bits.load_le(),
+            value: from_bits(&bits),
             bits,
         }
     }

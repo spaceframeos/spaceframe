@@ -16,7 +16,7 @@ impl FXCalculator {
         }
     }
 
-    pub fn calculate_fn(&self, input: &[&BitsSlice]) -> Bits {
+    pub fn calculate_fn(&self, input: &[&BitsSlice], y: &BitsSlice) -> Bits {
         let half_len = input.len() / 2;
         let mut first_half: Bits = BitVec::new();
         let mut last_half: Bits = BitVec::new();
@@ -26,59 +26,55 @@ impl FXCalculator {
         for slice in &input[half_len..] {
             last_half.extend_from_bitslice(slice);
         }
-        calculate_blake_hash(
-            &first_half,
-            &first_half,
-            &last_half,
-        )[..self.f_size].to_bitvec()
+        calculate_blake_hash(y, &first_half, &last_half)[..self.f_size].to_bitvec()
     }
 
-    pub fn collate_n(&self, input: &[&BitsSlice]) -> Result<Bits, ()> {
-        match input.len() {
-            1 => {
-                return Ok(input[0].to_bitvec());
-            }
-            2 => {
-                let mut out = input[0].to_bitvec();
-                out.extend_from_bitslice(input[1]);
-                return Ok(out);
-            }
-            4 => {
-                let mut out = input[0].to_bitvec();
-                out.extend_from_bitslice(input[1]);
-                out.extend_from_bitslice(input[2]);
-                out.extend_from_bitslice(input[3]);
-                return Ok(out);
-            }
-            8 => {
-                return Ok(calculate_blake_hash(
-                    &self.collate_n(&input[0..4]).unwrap(),
-                    &self.collate_n(&input[4..8]).unwrap(),
-                    &self.calculate_fn(&input[0..4]),
-                )[self.f_size..self.f_size + 4 * self.k]
-                    .to_bitvec());
-            }
-            16 => {
-                return Ok(calculate_blake_hash(
-                    &self.collate_n(&input[0..8]).unwrap(),
-                    &self.collate_n(&input[8..16]).unwrap(),
-                    &self.calculate_fn(&input[0..8]),
-                )[self.f_size..self.f_size + 3 * self.k]
-                    .to_bitvec());
-            }
-            32 => {
-                return Ok(calculate_blake_hash(
-                    &self.collate_n(&input[0..16]).unwrap(),
-                    &self.collate_n(&input[16..32]).unwrap(),
-                    &self.calculate_fn(&input[0..16]),
-                )[self.f_size..self.f_size + 2 * self.k]
-                    .to_bitvec());
-            }
-            _ => {
-                return Err(());
-            }
-        }
-    }
+    // pub fn collate_n(&self, input: &[&BitsSlice]) -> Result<Bits, ()> {
+    //     match input.len() {
+    //         1 => {
+    //             return Ok(input[0].to_bitvec());
+    //         }
+    //         2 => {
+    //             let mut out = input[0].to_bitvec();
+    //             out.extend_from_bitslice(input[1]);
+    //             return Ok(out);
+    //         }
+    //         4 => {
+    //             let mut out = input[0].to_bitvec();
+    //             out.extend_from_bitslice(input[1]);
+    //             out.extend_from_bitslice(input[2]);
+    //             out.extend_from_bitslice(input[3]);
+    //             return Ok(out);
+    //         }
+    //         8 => {
+    //             return Ok(calculate_blake_hash(
+    //                 &self.collate_n(&input[0..4]).unwrap(),
+    //                 &self.collate_n(&input[4..8]).unwrap(),
+    //                 &self.calculate_fn(&input[0..4]),
+    //             )[self.f_size..self.f_size + 4 * self.k]
+    //                 .to_bitvec());
+    //         }
+    //         16 => {
+    //             return Ok(calculate_blake_hash(
+    //                 &self.collate_n(&input[0..8]).unwrap(),
+    //                 &self.collate_n(&input[8..16]).unwrap(),
+    //                 &self.calculate_fn(&input[0..8]),
+    //             )[self.f_size..self.f_size + 3 * self.k]
+    //                 .to_bitvec());
+    //         }
+    //         32 => {
+    //             return Ok(calculate_blake_hash(
+    //                 &self.collate_n(&input[0..16]).unwrap(),
+    //                 &self.collate_n(&input[16..32]).unwrap(),
+    //                 &self.calculate_fn(&input[0..16]),
+    //             )[self.f_size..self.f_size + 2 * self.k]
+    //                 .to_bitvec());
+    //         }
+    //         _ => {
+    //             return Err(());
+    //         }
+    //     }
+    // }
 }
 
 pub fn calculate_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
