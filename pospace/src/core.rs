@@ -1,5 +1,5 @@
 use rayon::prelude::*;
-use std::{sync::{Mutex, atomic::AtomicU64, mpsc::channel}, time::{Duration, Instant}};
+use std::sync::mpsc::channel;
 
 use crate::{
     bits::{to_bits, BitsWrapper},
@@ -104,9 +104,11 @@ impl PoSpace {
         // let mut table3 = Vec::new();
         // let mut table4 = Vec::new();
 
+        let table_size = 2u64.pow(self.k as u32);
+
         let (sender, receiver) = channel();
 
-        (0..(2u64).pow(self.k as u32))
+        (0..table_size)
             .into_par_iter()
             .for_each_with(sender, |s, x| {
                 let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k), x);
@@ -116,17 +118,12 @@ impl PoSpace {
         let table1: Vec<BitsWrapper> = receiver.iter().collect();
         println!("Table 1 len: {}", table1.len());
 
-        let counter = Mutex::new(0u64);
-
-        // let mut timer = Instant::now();
-        let total = (2u64).pow(self.k as u32);
-
         let (sender, receiver) = channel();
 
-        (0..(2u64).pow(self.k as u32))
+        (0..table_size)
             .into_par_iter()
             .for_each_with(sender, |s, i| {
-                for j in 0..(2u64).pow(self.k as u32) {
+                for j in 0..table_size {
                     if i != j {
                         let fx1 = &table1[i as usize];
                         let fx2 = &table1[j as usize];
@@ -135,8 +132,6 @@ impl PoSpace {
                                 &[&to_bits(i, self.k), &to_bits(i, self.k)],
                                 &fx1.bits,
                             );
-                            let mut c = counter.lock().unwrap();
-                            *c += 1;
                             s.send((BitsWrapper::new(f2x), i, j)).unwrap();
                         }
                     }
@@ -145,68 +140,55 @@ impl PoSpace {
 
         let table2: Vec<(BitsWrapper, u64, u64)> = receiver.iter().collect();
 
-        println!("Count: {}", counter.lock().unwrap());
-
         println!(
             "Table 2 len: {} ({:.2}%)",
             table2.len(),
-            table2.len() as f64 / total as f64 * 100.0
+            table2.len() as f64 / table_size as f64 * 100.0
         );
-        // counter = 0;
 
-        // timer = Instant::now();
+        let (sender, receiver) = channel();
 
         // Table 3
-        // 'outer2: for i in 0..table2.len() {
-        //     for j in 0..table2.len() {
-        //         if i != j {
-        //             if timer.elapsed() >= Duration::from_secs(2) {
-        //                 let percent =
-        //                     ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-        //                 println!(
-        //                     "{:.2}% complete, table fill: {:.2}%",
-        //                     percent,
-        //                     table3.len() as f64 / total as f64 * 100.0
-        //                 );
-        //                 timer = Instant::now();
-        //             }
-        //             let entry1 = &table2[i];
-        //             let entry2 = &table2[j];
-        //             let fx1 = &entry1.0;
-        //             let fx2 = &entry2.0;
+        (0..table2.len())
+            .into_par_iter()
+            .for_each_with(sender, |s, i| {
+                for j in 0..table2.len() {
+                    if i != j {
+                        let entry1 = &table2[i];
+                        let entry2 = &table2[j];
+                        let fx1 = &entry1.0;
+                        let fx2 = &entry2.0;
 
-        //             if self.matching(fx1, fx2) {
-        //                 let f2x = self.fx_calculator.calculate_fn(
-        //                     &[
-        //                         &to_bits(entry1.1, self.k),
-        //                         &to_bits(entry1.2, self.k),
-        //                         &to_bits(entry2.1, self.k),
-        //                         &to_bits(entry2.2, self.k),
-        //                     ],
-        //                     &fx1.bits,
-        //                 );
-        //                 counter += 1;
-        //                 table3.push((
-        //                     BitsWrapper::new(f2x),
-        //                     entry1.1,
-        //                     entry1.2,
-        //                     entry2.1,
-        //                     entry2.2,
-        //                 ));
+                        if self.matching(fx1, fx2) {
+                            let f2x = self.fx_calculator.calculate_fn(
+                                &[
+                                    &to_bits(entry1.1, self.k),
+                                    &to_bits(entry1.2, self.k),
+                                    &to_bits(entry2.1, self.k),
+                                    &to_bits(entry2.2, self.k),
+                                ],
+                                &fx1.bits,
+                            );
+                            s.send((
+                                BitsWrapper::new(f2x),
+                                entry1.1,
+                                entry1.2,
+                                entry2.1,
+                                entry2.2,
+                            ))
+                            .unwrap();
+                        }
+                    }
+                }
+            });
 
-        //                 if counter == (2u64).pow(self.k as u32) {
-        //                     break 'outer2;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+        let table3: Vec<(BitsWrapper, u64, u64, u64, u64)> = receiver.iter().collect();
 
-        // println!(
-        //     "Table 3 len: {} ({:.2}%)",
-        //     table3.len(),
-        //     table3.len() as f64 / total as f64 * 100.0
-        // );
+        println!(
+            "Table 3 len: {} ({:.2}%)",
+            table3.len(),
+            table3.len() as f64 / table_size as f64 * 100.0
+        );
         // counter = 0;
 
         // timer = Instant::now();
@@ -258,7 +240,7 @@ impl PoSpace {
         //                     entry1.4,
         //                 ));
 
-        //                 if counter == (2u64).pow(self.k as u32) {
+        //                 if counter == total {
         //                     break 'outer3;
         //                 }
         //             }
@@ -269,13 +251,13 @@ impl PoSpace {
         println!(
             "Table 2 len: {} ({:.2}%)",
             table2.len(),
-            table2.len() as f64 / total as f64 * 100.0
+            table2.len() as f64 / table_size as f64 * 100.0
         );
-        // println!(
-        //     "Table 3 len: {} ({:.2}%)",
-        //     table3.len(),
-        //     table3.len() as f64 / total as f64 * 100.0
-        // );
+        println!(
+            "Table 3 len: {} ({:.2}%)",
+            table3.len(),
+            table3.len() as f64 / table_size as f64 * 100.0
+        );
         // println!(
         //     "Table 4 len: {} ({:.2}%)",
         //     table4.len(),
