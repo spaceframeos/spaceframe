@@ -135,9 +135,8 @@ impl PoSpace {
                                 &[&to_bits(i, self.k), &to_bits(i, self.k)],
                                 &fx1.bits,
                             );
-                            // counter += 1;
-                            let mut guard = counter.lock().unwrap();
-                            *guard += 1;
+                            let mut c = counter.lock().unwrap();
+                            *c += 1;
                             s.send((BitsWrapper::new(f2x), i, j)).unwrap();
                         }
                     }
