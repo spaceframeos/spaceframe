@@ -8,12 +8,6 @@ use crate::{
     fx_calculator::FXCalculator,
 };
 
-pub struct PlotEntry {
-    pub bits_wrapper: BitsWrapper,
-    pub x1: u64,
-    pub x2: u64,
-}
-
 #[derive(Debug)]
 pub struct PoSpace {
     plot_seed: Vec<u8>,
