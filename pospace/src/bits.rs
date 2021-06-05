@@ -3,8 +3,7 @@ use bitvec::prelude::*;
 use crate::{Bits, BitsSlice};
 
 pub fn to_bits(input: u64, size: usize) -> Bits {
-    let input_bytes = input.to_le_bytes();
-    let mut input_bits = input_bytes.view_bits::<Lsb0>()[..size].to_bitvec();
+    let mut input_bits = input.to_le_bytes().view_bits::<Lsb0>()[..size].to_bitvec();
     input_bits.reverse();
     input_bits
 }

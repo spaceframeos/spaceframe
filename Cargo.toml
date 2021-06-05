@@ -1,8 +1,13 @@
 [workspace]
-
 members = [
     "consensus",
     "pospace",
     "node",
     "bitvec",
 ]
+
+[profile.release]
+debug = true
+
+[profile.bench]
+debug = true

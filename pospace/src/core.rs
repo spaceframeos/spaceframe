@@ -22,7 +22,7 @@ impl PoSpace {
             plot_seed: plot_seed.to_vec(),
             k,
             f1_calculator: F1Calculator::new(k, &plot_seed),
-            fx_calculator: FXCalculator::new(k, F1Calculator::new(k, &plot_seed)),
+            fx_calculator: FXCalculator::new(k),
         }
     }
 
@@ -117,7 +117,7 @@ impl PoSpace {
                 if x1 != x2 {
                     if timer.elapsed() >= Duration::from_secs(1) {
                         let percent = ((x1 * total + x2) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
+                        println!("{:.2}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
                     let fx1 = &table1[x1 as usize];
@@ -126,7 +126,6 @@ impl PoSpace {
                         let f2x = self
                             .fx_calculator
                             .calculate_fn(&[&to_bits(x1, self.k), &to_bits(x1, self.k)]);
-                        // println!("f2x = {}, x1 = {}, x2 = {}", f2x, x1, x2);
                         counter += 1;
                         table2.push((f2x, x1, x2));
 
@@ -138,7 +137,7 @@ impl PoSpace {
             }
         }
 
-        println!("Table 2 len: {}", table2.len());
+        println!("Table 2 len: {} ({:.2}%)", table2.len(), table2.len() as f64 / total as f64 * 100.0);
         counter = 0;
 
         timer = Instant::now();
@@ -149,15 +148,13 @@ impl PoSpace {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
                         let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
+                        println!("{:.2}% complete, table fill: {:.2}%", percent, table3.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
                     let entry1 = &table2[i];
                     let entry2 = &table2[j];
                     let fx1 = &entry1.0;
                     let fx2 = &entry2.0;
-
-                    // println!("fx1 = {}, fx2 = {}", fx1, fx2);
 
                     if self.matching(fx1, fx2) {
                         let f2x = self.fx_calculator.calculate_fn(&[
@@ -177,7 +174,7 @@ impl PoSpace {
             }
         }
 
-        println!("Table 3 len: {}", table3.len());
+        println!("Table 3 len: {} ({:.2}%)", table3.len(), table3.len() as f64 / total as f64 * 100.0);
         counter = 0;
 
         timer = Instant::now();
@@ -188,7 +185,7 @@ impl PoSpace {
                 if i != j {
                     if timer.elapsed() >= Duration::from_secs(2) {
                         let percent = ((i as u64 * total + j as u64) as f64 / total.pow(2) as f64) * 100f64;
-                        println!("{:.3}% complete, table fill: {:.2}%", percent, table2.len() as f64 / total as f64 * 100.0);
+                        println!("{:.2}% complete, table fill: {:.2}%", percent, table4.len() as f64 / total as f64 * 100.0);
                         timer = Instant::now();
                     }
 
@@ -221,6 +218,6 @@ impl PoSpace {
                 }
             }
         }
-        println!("Table 4 len: {}", table4.len());
+        println!("Table 4 len: {} ({:.2}%)", table4.len(), table4.len() as f64 / total as f64 * 100.0);
     }
 }

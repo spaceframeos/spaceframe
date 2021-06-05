@@ -11,3 +11,6 @@ Cargo.lock
 **/*.rs.bk
 
 .idea/
+flamegraph.svg
+perf.data
+perf.data.old

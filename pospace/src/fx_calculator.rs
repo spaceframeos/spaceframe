@@ -1,19 +1,17 @@
 use bitvec::prelude::*;
 
-use crate::{constants::PARAM_EXT, f1_calculator::F1Calculator, Bits, BitsSlice};
+use crate::{constants::PARAM_EXT, Bits, BitsSlice};
 
 #[derive(Debug)]
 pub struct FXCalculator {
     k: usize,
     f_size: usize,
-    f1_calculator: F1Calculator,
 }
 
 impl FXCalculator {
-    pub fn new(k: usize, f1_calculator: F1Calculator) -> Self {
+    pub fn new(k: usize) -> Self {
         FXCalculator {
             k,
-            f1_calculator,
             f_size: k + PARAM_EXT,
         }
     }
@@ -29,7 +27,7 @@ impl FXCalculator {
             last_half.extend_from_bitslice(slice);
         }
         calculate_blake_hash(
-            &self.f1_calculator.calculate_f1(&input[0]),
+            &first_half,
             &first_half,
             &last_half,
         )[..self.f_size].to_bitvec()
