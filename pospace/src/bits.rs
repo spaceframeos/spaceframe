@@ -2,7 +2,7 @@ use bitvec::prelude::*;
 
 use crate::{Bits, BitsSlice};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BitsWrapper {
     pub bits: Bits,
     pub value: u64,
@@ -13,6 +13,12 @@ impl BitsWrapper {
         BitsWrapper {
             value: from_bits(&bits),
             bits,
+        }
+    }
+    pub fn from(val: u64, size: usize) -> Self {
+        BitsWrapper {
+            value: val,
+            bits: to_bits(val, size),
         }
     }
 }

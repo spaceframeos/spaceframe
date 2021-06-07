@@ -45,7 +45,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let l = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1]);
         let r = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0]);
         b.iter(|| {
-            pospace.matching(&l, &r);
+            pospace.matching_naive(&l, &r);
         })
     });
 

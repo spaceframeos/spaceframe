@@ -26,27 +26,7 @@ impl PoSpace {
         }
     }
 
-    /// ```cpp
-    /// bool CheckMatch(int64_t yl, int64_t yr)
-    /// {
-    ///     int64_t bl = yl / kBC;
-    ///     int64_t br = yr / kBC;
-    ///     if (bl + 1 != br)
-    ///         return false;  // Buckets don't match
-    ///     for (int64_t m = 0; m < kExtraBitsPow; m++) {
-    ///         if ((((yr % kBC) / kC - ((yl % kBC) / kC)) - m) % kB == 0) {
-    ///             int64_t c_diff = 2 * m + bl % 2;
-    ///             c_diff *= c_diff;
-    ///
-    ///             if ((((yr % kBC) % kC - ((yl % kBC) % kC)) - c_diff) % kC == 0) {
-    ///                 return true;
-    ///             }
-    ///         }
-    ///     }
-    ///     return false;
-    /// }
-    /// ```
-    pub fn matching(&self, l: &BitsWrapper, r: &BitsWrapper) -> bool {
+    pub fn matching_naive(&self, l: &BitsWrapper, r: &BitsWrapper) -> bool {
         assert_eq!(
             self.k + PARAM_EXT,
             l.bits.len(),
@@ -59,12 +39,6 @@ impl PoSpace {
             "r must be {} bits",
             self.k + PARAM_EXT
         );
-
-        //   For any 0 <= m < kExtraBitsPow:
-        //   yl / kBC + 1 = yR / kBC   AND
-        //   (yr % kBC) / kC - (yl % kBC) / kC = m   (mod kB)  AND
-        //   (yr % kBC) % kC - (yl % kBC) % kC = (2m + (yl/kBC) % 2)^2   (mod kC)
-        //
 
         let k_bc = PARAM_BC as i64;
         let k_b = PARAM_B as i64;
@@ -83,7 +57,7 @@ impl PoSpace {
         for m in 0..PARAM_M {
             let m = m as i64;
             if (((yr % k_bc) / k_c - ((yl % k_bc) / k_c)) - m) % k_b == 0 {
-                let mut c_diff = 2 * m + bl % 2;
+                let mut c_diff = 2 * m + (bl % 2);
                 c_diff *= c_diff;
 
                 if (((yr % k_bc) % k_c - ((yl % k_bc) % k_c)) - c_diff) % k_c == 0 {
@@ -119,18 +93,23 @@ impl PoSpace {
                     if i != j {
                         let fx1 = &table1[i as usize];
                         let fx2 = &table1[j as usize];
-                        if self.matching(fx1, fx2) {
+                        if self.matching_naive(fx1, fx2) {
                             let f2x = self.fx_calculator.calculate_fn(
                                 &[&to_bits(i, self.k), &to_bits(i, self.k)],
                                 &fx1.bits,
                             );
-                            s.send((BitsWrapper::new(f2x), i, j)).unwrap();
+                            s.send((
+                                BitsWrapper::new(f2x),
+                                BitsWrapper::from(i, self.k),
+                                BitsWrapper::from(j, self.k),
+                            ))
+                            .unwrap();
                         }
                     }
                 }
             });
 
-        let table2: Vec<(BitsWrapper, u64, u64)> = receiver.iter().collect();
+        let table2: Vec<(BitsWrapper, BitsWrapper, BitsWrapper)> = receiver.iter().collect();
 
         println!(
             "Table 2 len: {} ({:.2}%)",
@@ -151,22 +130,22 @@ impl PoSpace {
                         let fx1 = &entry1.0;
                         let fx2 = &entry2.0;
 
-                        if self.matching(fx1, fx2) {
+                        if self.matching_naive(fx1, fx2) {
                             let f2x = self.fx_calculator.calculate_fn(
                                 &[
-                                    &to_bits(entry1.1, self.k),
-                                    &to_bits(entry1.2, self.k),
-                                    &to_bits(entry2.1, self.k),
-                                    &to_bits(entry2.2, self.k),
+                                    &entry1.1.bits,
+                                    &entry1.2.bits,
+                                    &entry2.1.bits,
+                                    &entry2.2.bits,
                                 ],
                                 &fx1.bits,
                             );
                             s.send((
                                 BitsWrapper::new(f2x),
-                                entry1.1,
-                                entry1.2,
-                                entry2.1,
-                                entry2.2,
+                                entry1.1.clone(),
+                                entry1.2.clone(),
+                                entry2.1.clone(),
+                                entry2.2.clone(),
                             ))
                             .unwrap();
                         }
@@ -174,14 +153,20 @@ impl PoSpace {
                 }
             });
 
-        let table3: Vec<(BitsWrapper, u64, u64, u64, u64)> = receiver.iter().collect();
+        let table3: Vec<(
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+        )> = receiver.iter().collect();
 
         println!(
             "Table 3 len: {} ({:.2}%)",
             table3.len(),
             table3.len() as f64 / table_size as f64 * 100.0
         );
-        
+
         // Table 4
         let (sender, receiver) = channel();
 
@@ -195,30 +180,30 @@ impl PoSpace {
                         let fx1 = &entry1.0;
                         let fx2 = &entry2.0;
 
-                        if self.matching(fx1, fx2) {
+                        if self.matching_naive(fx1, fx2) {
                             let f2x = self.fx_calculator.calculate_fn(
                                 &[
-                                    &to_bits(entry1.1, self.k),
-                                    &to_bits(entry1.2, self.k),
-                                    &to_bits(entry1.3, self.k),
-                                    &to_bits(entry1.4, self.k),
-                                    &to_bits(entry2.1, self.k),
-                                    &to_bits(entry2.2, self.k),
-                                    &to_bits(entry2.3, self.k),
-                                    &to_bits(entry2.4, self.k),
+                                    &entry1.1.bits,
+                                    &entry1.2.bits,
+                                    &entry1.3.bits,
+                                    &entry1.4.bits,
+                                    &entry2.1.bits,
+                                    &entry2.2.bits,
+                                    &entry2.3.bits,
+                                    &entry2.4.bits,
                                 ],
                                 &fx1.bits,
                             );
                             s.send((
                                 BitsWrapper::new(f2x),
-                                entry1.1,
-                                entry1.2,
-                                entry1.3,
-                                entry1.4,
-                                entry2.1,
-                                entry1.2,
-                                entry1.3,
-                                entry1.4,
+                                entry1.1.clone(),
+                                entry1.2.clone(),
+                                entry1.3.clone(),
+                                entry1.4.clone(),
+                                entry2.1.clone(),
+                                entry1.2.clone(),
+                                entry1.3.clone(),
+                                entry1.4.clone(),
                             ))
                             .unwrap();
                         }
@@ -226,7 +211,17 @@ impl PoSpace {
                 }
             });
 
-        let table4: Vec<(BitsWrapper, u64, u64, u64, u64, u64, u64, u64, u64)> = receiver.iter().collect();
+        let table4: Vec<(
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+            BitsWrapper,
+        )> = receiver.iter().collect();
 
         println!(
             "Table 4 len: {} ({:.2}%)",
