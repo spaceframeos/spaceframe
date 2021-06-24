@@ -31,10 +31,10 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("init") {
         if let Ok(k) = matches.value_of("space").unwrap().parse::<usize>() {
-            let mut plot_seed = [0u8; 32];
-            OsRng.fill_bytes(&mut plot_seed);
-            // let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
-            let pos = PoSpace::new(k, &plot_seed);
+            // let mut plot_seed = [0u8; 32];
+            // OsRng.fill_bytes(&mut plot_seed);
+            let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
+            let mut pos = PoSpace::new(k, plot_seed);
             pos.run_phase_1();
         }
     }

@@ -1,8 +1,10 @@
+use std::fmt::{Display};
+
 use bitvec::prelude::*;
 
 use crate::{Bits, BitsSlice};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitsWrapper {
     pub bits: Bits,
     pub value: u64,
@@ -21,6 +23,20 @@ impl BitsWrapper {
             bits: to_bits(val, size),
         }
     }
+}
+
+impl Display for BitsWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.bits, self.value)
+    }
+}
+
+pub fn display_table(table: &Vec<(BitsWrapper, BitsWrapper)>) {
+    println!("[");
+    for item in table {
+        println!("  fx = {}, x = {}", item.0.value, item.1.value);
+    }
+    println!("]");
 }
 
 pub fn to_bits(input: u64, size: usize) -> Bits {

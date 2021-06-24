@@ -66,7 +66,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 fn phase1_benchmark(c: &mut Criterion) {
     let mut plot_seed = [0u8; 32];
     OsRng.fill_bytes(&mut plot_seed);
-    let pos = PoSpace::new(10, &plot_seed);
+    let mut pos = PoSpace::new(10, &plot_seed);
 
     c.bench_function("run_phase1", |b| {
         b.iter(|| pos.run_phase_1());

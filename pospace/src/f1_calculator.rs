@@ -1,12 +1,10 @@
-use std::cmp;
-
 use bitvec::prelude::*;
 use chacha20::{
     cipher::{NewCipher, StreamCipher, StreamCipherSeek},
     ChaCha8, Key, Nonce,
 };
 
-use crate::{Bits, BitsSlice, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
+use crate::{Bits, BitsSlice, bits::BitsWrapper, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
 
 #[derive(Debug, Clone)]
 pub struct F1Calculator {
@@ -22,10 +20,11 @@ impl F1Calculator {
         }
     }
 
-    pub fn calculate_f1(&self, x: &BitsSlice, x_val: u64) -> Bits {
-        assert_eq!(x.len(), self.k, "x must be k bits");
+    pub fn calculate_f1(&self, x: &BitsWrapper) -> Bits {
+        assert_eq!(x.bits.len(), self.k, "x must be k bits");
+        assert!(x.bits.len() >= PARAM_EXT, "x must greater or equal to {} bits", PARAM_EXT);
 
-        let (q, r) = divmod(x_val * self.k as u64, STATE_SIZE_BITS as u64);
+        let (q, r) = divmod(x.value * self.k as u64, STATE_SIZE_BITS as u64);
 
         let key = Key::from_slice(self.plot_seed.as_slice());
         let nonce = Nonce::from_slice(b"000000000000");
@@ -52,11 +51,8 @@ impl F1Calculator {
             result[r as usize..r as usize + self.k].to_bitvec()
         };
 
-        let extension = &x[..cmp::min(PARAM_EXT, x.len()) as usize];
+        let extension = &x.bits[..PARAM_EXT];
         result.extend_from_bitslice(extension);
-        if x.len() < PARAM_EXT {
-            result.append(&mut bitvec![0; PARAM_EXT - x.len()]);
-        }
         result
     }
 }

@@ -1,12 +1,7 @@
 use rayon::prelude::*;
 use std::sync::mpsc::channel;
 
-use crate::{
-    bits::{to_bits, BitsWrapper},
-    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
-    f1_calculator::F1Calculator,
-    fx_calculator::FXCalculator,
-};
+use crate::{bits::{BitsWrapper, display_table}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -14,6 +9,27 @@ pub struct PoSpace {
     k: usize,
     f1_calculator: F1Calculator,
     fx_calculator: FXCalculator,
+
+    pub table1: Vec<(BitsWrapper, BitsWrapper)>,
+    pub table2: Vec<(BitsWrapper, BitsWrapper, BitsWrapper)>,
+    pub table3: Vec<(
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+    )>,
+    pub table4: Vec<(
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+        BitsWrapper,
+    )>,
 }
 
 impl PoSpace {
@@ -23,6 +39,10 @@ impl PoSpace {
             k,
             f1_calculator: F1Calculator::new(k, &plot_seed),
             fx_calculator: FXCalculator::new(k),
+            table1: Vec::new(),
+            table2: Vec::new(),
+            table3: Vec::new(),
+            table4: Vec::new(),
         }
     }
 
@@ -68,7 +88,7 @@ impl PoSpace {
         return false;
     }
 
-    pub fn run_phase_1(&self) {
+    pub fn run_phase_1(&mut self) {
         let table_size = 2u64.pow(self.k as u32);
 
         let (sender, receiver) = channel();
@@ -76,57 +96,58 @@ impl PoSpace {
         (0..table_size)
             .into_par_iter()
             .for_each_with(sender, |s, x| {
-                let fx = self.f1_calculator.calculate_f1(&to_bits(x, self.k), x);
-                s.send(BitsWrapper::new(fx)).unwrap();
+                let x_wrapped = BitsWrapper::from(x, self.k);
+                let fx = self.f1_calculator.calculate_f1(&x_wrapped);
+                s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
             });
 
-        let table1: Vec<BitsWrapper> = receiver.iter().collect();
-        println!("Table 1 len: {}", table1.len());
+        self.table1 = receiver.iter().collect();
+        self.table1.sort_by(|a, b| a.0.value.cmp(&b.0.value));
+        println!("Table 1 len: {}", self.table1.len());
+        // display_table(&self.table1);
 
         // Table 2
         let (sender, receiver) = channel();
 
-        (0..table_size)
+        (0..self.table1.len())
             .into_par_iter()
             .for_each_with(sender, |s, i| {
-                for j in 0..table_size {
+                for j in 0..self.table1.len() {
                     if i != j {
-                        let fx1 = &table1[i as usize];
-                        let fx2 = &table1[j as usize];
+                        let entry1 = &self.table1[i];
+                        let entry2 = &self.table1[j];
+                        let fx1 = &entry1.0;
+                        let fx2 = &entry2.0;
                         if self.matching_naive(fx1, fx2) {
-                            let f2x = self.fx_calculator.calculate_fn(
-                                &[&to_bits(i, self.k), &to_bits(i, self.k)],
-                                &fx1.bits,
-                            );
-                            s.send((
-                                BitsWrapper::new(f2x),
-                                BitsWrapper::from(i, self.k),
-                                BitsWrapper::from(j, self.k),
-                            ))
-                            .unwrap();
+                            let f2x = self
+                                .fx_calculator
+                                .calculate_fn(&[&entry1.1.bits, &entry2.1.bits], &fx1.bits);
+                            s.send((BitsWrapper::new(f2x), entry1.1.clone(), entry2.1.clone()))
+                                .unwrap();
                         }
                     }
                 }
             });
 
-        let table2: Vec<(BitsWrapper, BitsWrapper, BitsWrapper)> = receiver.iter().collect();
+        self.table2 = receiver.iter().collect();
+        self.table2.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
         println!(
             "Table 2 len: {} ({:.2}%)",
-            table2.len(),
-            table2.len() as f64 / table_size as f64 * 100.0
+            self.table2.len(),
+            self.table2.len() as f64 / table_size as f64 * 100.0
         );
 
         // Table 3
         let (sender, receiver) = channel();
 
-        (0..table2.len())
+        (0..self.table2.len())
             .into_par_iter()
             .for_each_with(sender, |s, i| {
-                for j in 0..table2.len() {
+                for j in 0..self.table2.len() {
                     if i != j {
-                        let entry1 = &table2[i];
-                        let entry2 = &table2[j];
+                        let entry1 = &self.table2[i];
+                        let entry2 = &self.table2[j];
                         let fx1 = &entry1.0;
                         let fx2 = &entry2.0;
 
@@ -153,30 +174,25 @@ impl PoSpace {
                 }
             });
 
-        let table3: Vec<(
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-        )> = receiver.iter().collect();
+        self.table3 = receiver.iter().collect();
+        self.table3.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
         println!(
             "Table 3 len: {} ({:.2}%)",
-            table3.len(),
-            table3.len() as f64 / table_size as f64 * 100.0
+            self.table3.len(),
+            self.table3.len() as f64 / table_size as f64 * 100.0
         );
 
         // Table 4
         let (sender, receiver) = channel();
 
-        (0..table3.len())
+        (0..self.table3.len())
             .into_par_iter()
             .for_each_with(sender, |s, i| {
-                for j in 0..table3.len() {
+                for j in 0..self.table3.len() {
                     if i != j {
-                        let entry1 = &table3[i];
-                        let entry2 = &table3[j];
+                        let entry1 = &self.table3[i];
+                        let entry2 = &self.table3[j];
                         let fx1 = &entry1.0;
                         let fx2 = &entry2.0;
 
@@ -201,9 +217,9 @@ impl PoSpace {
                                 entry1.3.clone(),
                                 entry1.4.clone(),
                                 entry2.1.clone(),
-                                entry1.2.clone(),
-                                entry1.3.clone(),
-                                entry1.4.clone(),
+                                entry2.2.clone(),
+                                entry2.3.clone(),
+                                entry2.4.clone(),
                             ))
                             .unwrap();
                         }
@@ -211,39 +227,60 @@ impl PoSpace {
                 }
             });
 
-        let table4: Vec<(
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-            BitsWrapper,
-        )> = receiver.iter().collect();
+        self.table4 = receiver.iter().collect();
+        self.table4.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
         println!(
             "Table 4 len: {} ({:.2}%)",
-            table4.len(),
-            table4.len() as f64 / table_size as f64 * 100.0
+            self.table4.len(),
+            self.table4.len() as f64 / table_size as f64 * 100.0
         );
 
         println!("\nFinal tables:");
         println!(
             "Table 2 len: {} ({:.2}%)",
-            table2.len(),
-            table2.len() as f64 / table_size as f64 * 100.0
+            self.table2.len(),
+            self.table2.len() as f64 / table_size as f64 * 100.0
         );
         println!(
             "Table 3 len: {} ({:.2}%)",
-            table3.len(),
-            table3.len() as f64 / table_size as f64 * 100.0
+            self.table3.len(),
+            self.table3.len() as f64 / table_size as f64 * 100.0
         );
         println!(
             "Table 4 len: {} ({:.2}%)",
-            table4.len(),
-            table4.len() as f64 / table_size as f64 * 100.0
+            self.table4.len(),
+            self.table4.len() as f64 / table_size as f64 * 100.0
         );
+        // println!("{:?}\n", self.table1);
+        // println!("{:?}\n", self.table2);
+        // println!("{:?}\n", self.table3);
+        // println!("{:?}", self.table4);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_plotting() {
+        let k = 10;
+        let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
+
+        let mut pos1 = PoSpace::new(k, plot_seed);
+        pos1.run_phase_1();
+        let mut pos2 = PoSpace::new(k, plot_seed);
+        pos2.run_phase_1();
+
+        assert_eq!(pos1.table1, pos2.table1);
+        for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
+            if tuple.0 != tuple.1 {
+                println!("({}, {}) not equal to ({}, {})", tuple.0.1.value, tuple.0.2.value, tuple.1.1.value, tuple.1.2.value);
+            }
+        }
+        // assert_eq!(pos1.table2, pos2.table2);
+        // assert_eq!(pos1.table3, pos2.table3);
+        // assert_eq!(pos1.table4, pos2.table4);
     }
 }
