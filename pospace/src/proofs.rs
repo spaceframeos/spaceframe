@@ -1,7 +1,6 @@
-use bitvec::prelude::*;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{Bits, BitsSlice, bits::BitsWrapper, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
+use crate::{Bits, bits::BitsWrapper, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
 
 pub struct Proof {
     items: Vec<BitsWrapper>,
@@ -92,14 +91,25 @@ pub fn verify_prove(proof: Proof, plot_seed: &[u8]) -> bool {
             return false;
         }
     }
+    
+    let f4y = fxcalc.calculate_fn(&[
+        &proof.items[0].bits,
+        &proof.items[1].bits,
+        &proof.items[2].bits,
+        &proof.items[3].bits,
+        &proof.items[4].bits,
+        &proof.items[5].bits,
+        &proof.items[6].bits,
+        &proof.items[7].bits,
+    ], &table3[0].bits);
 
-    return true;
+    return f4y[..proof.k] == proof.challenge
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{bits::to_bits, core::PoSpace};
-
+    use crate::{core::PoSpace};
+    use bitvec::prelude::*;
     use super::*;
 
     #[test]
@@ -116,8 +126,7 @@ mod tests {
         if item.is_some() {
             println!("Proof found");
             let item = item.unwrap();
-            println!("Verifying proof...");
-            let verified = verify_prove(Proof {
+            let proof = Proof {
                 items: vec![
                     item.1.clone(),
                     item.2.clone(),
@@ -128,10 +137,12 @@ mod tests {
                     item.7.clone(),
                     item.8.clone(),
                 ],
-                challenge: to_bits(42, 14),
+                challenge,
                 k,
-            }, plot_seed);
-            assert!(verified);
+            };
+            println!("Verifying proof...");
+            let verified = verify_prove(proof, plot_seed);
+            assert!(verified, "Invalid proof");
         } else {
             assert!(false, "No proof found :(");
         }

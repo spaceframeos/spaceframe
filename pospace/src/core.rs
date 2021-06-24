@@ -1,7 +1,7 @@
 use rayon::prelude::*;
 use std::sync::mpsc::channel;
 
-use crate::{bits::{BitsWrapper, display_table}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
+use crate::{bits::{BitsWrapper}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_plotting() {
-        let k = 10;
+        let k = 12;
         let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
 
         let mut pos1 = PoSpace::new(k, plot_seed);
@@ -273,14 +273,16 @@ mod tests {
         let mut pos2 = PoSpace::new(k, plot_seed);
         pos2.run_phase_1();
 
-        assert_eq!(pos1.table1, pos2.table1);
         for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
-            if tuple.0 != tuple.1 {
-                println!("({}, {}) not equal to ({}, {})", tuple.0.1.value, tuple.0.2.value, tuple.1.1.value, tuple.1.2.value);
-            }
+            assert_eq!(tuple.0.0, tuple.1.0);
         }
-        // assert_eq!(pos1.table2, pos2.table2);
-        // assert_eq!(pos1.table3, pos2.table3);
-        // assert_eq!(pos1.table4, pos2.table4);
+        
+        for tuple in pos1.table3.iter().zip(pos2.table3.iter()) {
+            assert_eq!(tuple.0.0, tuple.1.0);
+        }
+
+        for tuple in pos1.table4.iter().zip(pos2.table4.iter()) {
+            assert_eq!(tuple.0.0, tuple.1.0);
+        }
     }
 }
