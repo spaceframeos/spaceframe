@@ -14,3 +14,5 @@ Cargo.lock
 flamegraph.svg
 perf.data
 perf.data.old
+
+data/

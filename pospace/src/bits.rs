@@ -1,4 +1,4 @@
-use std::fmt::{Display};
+use std::fmt::Display;
 
 use bitvec::prelude::*;
 
@@ -61,19 +61,37 @@ mod tests {
         assert_eq!(to_bits(5, 10), bitvec![0, 0, 0, 0, 0, 0, 0, 1, 0, 1]);
         assert_eq!(to_bits(13, 10), bitvec![0, 0, 0, 0, 0, 0, 1, 1, 0, 1]);
         assert_eq!(to_bits(0xab, 10), bitvec![0, 0, 1, 0, 1, 0, 1, 0, 1, 1]);
-        assert_eq!(to_bits(0xabcd, 16), bitvec![1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]);
+        assert_eq!(
+            to_bits(0xabcd, 16),
+            bitvec![1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]
+        );
     }
 
     #[test]
     fn test_from_bits() {
-        assert_eq!(from_bits(&bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1]), 5);
-        assert_eq!(from_bits(&bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 1, 1, 0, 1]), 13);
-        assert_eq!(from_bits(&bitvec![Lsb0, u8; 0, 0, 1, 0, 1, 0, 1, 0, 1, 1]), 0xab);
+        assert_eq!(
+            from_bits(&bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1]),
+            5
+        );
+        assert_eq!(
+            from_bits(&bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 1, 1, 0, 1]),
+            13
+        );
+        assert_eq!(
+            from_bits(&bitvec![Lsb0, u8; 0, 0, 1, 0, 1, 0, 1, 0, 1, 1]),
+            0xab
+        );
     }
 
     #[test]
     fn test_bits_slice() {
-        assert_eq!(to_bits(0xabcd, 16)[4..13], bitvec![Lsb0, u8; 1, 0, 1, 1, 1, 1, 0, 0, 1]);
-        assert_eq!(to_bits(0x7b91, 16)[9..], bitvec![Lsb0, u8; 0, 0, 1, 0, 0, 0, 1]);
+        assert_eq!(
+            to_bits(0xabcd, 16)[4..13],
+            bitvec![Lsb0, u8; 1, 0, 1, 1, 1, 1, 0, 0, 1]
+        );
+        assert_eq!(
+            to_bits(0x7b91, 16)[9..],
+            bitvec![Lsb0, u8; 0, 0, 1, 0, 0, 0, 1]
+        );
     }
 }

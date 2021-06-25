@@ -1,7 +1,22 @@
+use flate2::{
+    write::{DeflateDecoder, DeflateEncoder},
+    Compression,
+};
 use rayon::prelude::*;
-use std::sync::mpsc::channel;
+use std::{
+    fs::{create_dir_all, remove_dir, remove_dir_all, File},
+    io::Write,
+    path::Path,
+    sync::mpsc::channel,
+};
 
-use crate::{bits::{BitsWrapper}, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
+use crate::{
+    bits::BitsWrapper,
+    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
+    f1_calculator::F1Calculator,
+    fx_calculator::FXCalculator,
+    storage::Table1Entry,
+};
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -89,6 +104,17 @@ impl PoSpace {
     }
 
     pub fn run_phase_1(&mut self) {
+        // Clear data folder
+        match remove_dir_all("data") {
+            Ok(_) => {
+                println!("Cleaning data folder");
+            }
+            Err(e) => {
+                println!("Cannot clean data folder: {}", e);
+            }
+        }
+        create_dir_all("data").ok();
+
         let table_size = 2u64.pow(self.k as u32);
 
         let (sender, receiver) = channel();
@@ -101,10 +127,36 @@ impl PoSpace {
                 s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
             });
 
+        println!("Calculating table 1 ...");
+        const BUFFER_SIZE: usize = u32::MAX as usize;
+        let mut buffer = Vec::new();
+        let mut index = 1;
+        while let Ok(data) = receiver.recv() {
+            buffer.push(Table1Entry {
+                x: data.1.value,
+                y: data.0.value,
+            });
+            if buffer.len() > BUFFER_SIZE {
+                // Write to disk
+                let new_file =
+                    File::create(Path::new("data").join(format!("table1_{}", index))).unwrap();
+                let bin_data = bincode::serialize(&buffer).unwrap();
+                let mut compress = DeflateEncoder::new(new_file, Compression::default());
+                compress.write_all(&bin_data).unwrap();
+                index += 1;
+                buffer.clear();
+            }
+        }
+
+        let new_file = File::create(Path::new("data").join(format!("table1_{}", index))).unwrap();
+        let bin_data = bincode::serialize(&buffer).unwrap();
+        let mut compress = DeflateEncoder::new(new_file, Compression::default());
+        compress.write_all(&bin_data).unwrap();
+        // TODO write remaining items in buffer to disk
+
         self.table1 = receiver.iter().collect();
         self.table1.sort_by(|a, b| a.0.value.cmp(&b.0.value));
         println!("Table 1 len: {}", self.table1.len());
-        // display_table(&self.table1);
 
         // Table 2
         let (sender, receiver) = channel();
@@ -274,15 +326,15 @@ mod tests {
         pos2.run_phase_1();
 
         for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
-        
+
         for tuple in pos1.table3.iter().zip(pos2.table3.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
 
         for tuple in pos1.table4.iter().zip(pos2.table4.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
     }
 }
