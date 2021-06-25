@@ -15,7 +15,7 @@ use crate::{
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::Table1Entry,
+    storage::{store_table1_part, Table1Entry},
 };
 
 #[derive(Debug)]
@@ -138,20 +138,13 @@ impl PoSpace {
             });
             if buffer.len() > BUFFER_SIZE {
                 // Write to disk
-                let new_file =
-                    File::create(Path::new("data").join(format!("table1_{}", index))).unwrap();
-                let bin_data = bincode::serialize(&buffer).unwrap();
-                let mut compress = DeflateEncoder::new(new_file, Compression::default());
-                compress.write_all(&bin_data).unwrap();
+                store_table1_part(&buffer, index);
                 index += 1;
                 buffer.clear();
             }
         }
 
-        let new_file = File::create(Path::new("data").join(format!("table1_{}", index))).unwrap();
-        let bin_data = bincode::serialize(&buffer).unwrap();
-        let mut compress = DeflateEncoder::new(new_file, Compression::default());
-        compress.write_all(&bin_data).unwrap();
+        store_table1_part(&buffer, index);
         // TODO write remaining items in buffer to disk
 
         self.table1 = receiver.iter().collect();
