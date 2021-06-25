@@ -15,7 +15,7 @@ use crate::{
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::{store_table1_part, Table1Entry},
+    storage::{sort_table1, store_table1_part, Table1Entry, BUCKET_SIZE},
 };
 
 #[derive(Debug)]
@@ -128,7 +128,6 @@ impl PoSpace {
             });
 
         println!("Calculating table 1 ...");
-        const BUFFER_SIZE: usize = u32::MAX as usize;
         let mut buffer = Vec::new();
         let mut index = 1;
         while let Ok(data) = receiver.recv() {
@@ -136,7 +135,7 @@ impl PoSpace {
                 x: data.1.value,
                 y: data.0.value,
             });
-            if buffer.len() > BUFFER_SIZE {
+            if buffer.len() >= BUCKET_SIZE {
                 // Write to disk
                 store_table1_part(&buffer, index);
                 index += 1;
@@ -145,10 +144,9 @@ impl PoSpace {
         }
 
         store_table1_part(&buffer, index);
-        // TODO write remaining items in buffer to disk
 
-        self.table1 = receiver.iter().collect();
-        self.table1.sort_by(|a, b| a.0.value.cmp(&b.0.value));
+        sort_table1();
+
         println!("Table 1 len: {}", self.table1.len());
 
         // Table 2
