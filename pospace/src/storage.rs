@@ -2,12 +2,13 @@ use glob::glob;
 use std::{
     fs::File,
     io::{Read, Write},
+    os::unix::prelude::MetadataExt,
     path::Path,
 };
 
 use crate::bits::BitsWrapper;
 use flate2::{write::DeflateEncoder, Compression};
-use serde::{Deserialize, Serialize, __private::de::InternallyTaggedUnitVisitor, ser};
+use serde::{Deserialize, Serialize};
 
 pub const BUCKET_SIZE: usize = 20_000;
 
@@ -46,21 +47,18 @@ pub fn store_table1_part(buffer: &[Table1Entry], index: usize) {
 
 pub fn sort_table1() {
     // Sort each bucket
+    let mut chunks_count = 0;
+    let mut parts = Vec::new();
+    let serialized_size =
+        bincode::serialized_size(&Table1Entry { x: 12345, y: 12345 }).unwrap() as usize;
+
     for entry in glob("data/table1_*").unwrap() {
         match entry {
             Ok(path) => {
                 if path.is_file() {
                     let mut buffer = Vec::new();
                     let mut file = File::open(&path).unwrap();
-                    let amount = file.read_to_end(&mut buffer).unwrap();
-                    let serialized_size =
-                        bincode::serialized_size(&Table1Entry { x: 12345, y: 12345 }).unwrap();
-                    println!(
-                        "Amount: {} Kb, ser size: {} - {}",
-                        amount / 1024,
-                        serialized_size,
-                        amount as f64 / serialized_size as f64
-                    );
+                    file.read_to_end(&mut buffer).unwrap();
                     let mut entries = buffer
                         .chunks(serialized_size as usize)
                         .map(|chunk| {
@@ -69,20 +67,21 @@ pub fn sort_table1() {
                         .collect::<Vec<Table1Entry>>();
 
                     entries.sort();
-                    let mut sorted_file = File::create(Path::new("data").join(format!(
+                    let path = Path::new("data").join(format!(
                         "{}_sorted",
                         String::from(path.file_name().unwrap().to_str().unwrap())
-                    )))
-                    .unwrap();
+                    ));
+                    let mut sorted_file = File::create(&path).unwrap();
+
+                    parts.push(path);
 
                     let bin_data = entries
                         .iter()
                         .flat_map(|x| bincode::serialize(x).unwrap())
                         .collect::<Vec<u8>>();
 
-                    sorted_file
-                        .write_all(&bincode::serialize(&bin_data).unwrap())
-                        .unwrap();
+                    sorted_file.write_all(&bin_data).unwrap();
+                    chunks_count += 1;
                 }
             }
             Err(_) => todo!(),
@@ -90,6 +89,74 @@ pub fn sort_table1() {
     }
 
     // K-Way Merge sort
+    println!("K-Way merging for table 1 ...");
+
+    // Load BUCKET_SIZE / (chunks_count - 1) buckets into RAM
+    if chunks_count > 1 {
+        let merge_chunck_size = BUCKET_SIZE / (chunks_count - 1);
+        let mut state = KWayMergeState {
+            chunks: Vec::new(),
+            output: Vec::new(),
+        };
+
+        for path in parts {
+            let mut file = File::open(path).unwrap();
+            let mut buffer = vec![0u8; serialized_size * merge_chunck_size];
+            let amount = file.read(&mut buffer).unwrap();
+            println!("Red {} bytes", amount);
+            let entries = buffer
+                .chunks(serialized_size as usize)
+                .filter_map(|chunk| {
+                    if chunk.iter().all(|c| c == &0u8) {
+                        return None;
+                    } else {
+                        return Some(bincode::deserialize(&chunk).unwrap());
+                    }
+                })
+                .collect::<Vec<Table1Entry>>();
+            let total_size = file.metadata().unwrap().len() as usize / serialized_size;
+            state.chunks.push(MergeChunk {
+                remaining: total_size - entries.len(),
+                content: entries,
+                indice: 0,
+                total_size,
+            });
+        }
+
+        println!(
+            "{:?}",
+            state
+                .chunks
+                .iter()
+                .map(|p| p.content.len())
+                .collect::<Vec<usize>>()
+        );
+
+        println!(
+            "{:?}",
+            state
+                .chunks
+                .iter()
+                .map(|p| p.remaining)
+                .collect::<Vec<usize>>()
+        )
+
+        // println!("State: {:?}", state);
+    }
+}
+
+#[derive(Debug)]
+struct KWayMergeState {
+    chunks: Vec<MergeChunk>,
+    output: Vec<Table1Entry>,
+}
+
+#[derive(Debug)]
+struct MergeChunk {
+    content: Vec<Table1Entry>,
+    indice: usize,
+    total_size: usize,
+    remaining: usize,
 }
 
 fn compress<T>(writer: T) -> DeflateEncoder<T>
@@ -97,4 +164,12 @@ where
     T: Write,
 {
     DeflateEncoder::new(writer, Compression::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_buckets() {}
 }

@@ -211,7 +211,7 @@ impl PoSpace {
                                 entry2.1.clone(),
                                 entry2.2.clone(),
                             ))
-                            .unwrap();
+                                .unwrap();
                         }
                     }
                 }
@@ -264,7 +264,7 @@ impl PoSpace {
                                 entry2.3.clone(),
                                 entry2.4.clone(),
                             ))
-                            .unwrap();
+                                .unwrap();
                         }
                     }
                 }
@@ -317,15 +317,15 @@ mod tests {
         pos2.run_phase_1();
 
         for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
+            assert_eq!(tuple.0.0, tuple.1.0);
         }
 
         for tuple in pos1.table3.iter().zip(pos2.table3.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
+            assert_eq!(tuple.0.0, tuple.1.0);
         }
 
         for tuple in pos1.table4.iter().zip(pos2.table4.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
+            assert_eq!(tuple.0.0, tuple.1.0);
         }
     }
 }
