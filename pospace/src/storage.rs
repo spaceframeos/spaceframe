@@ -209,6 +209,9 @@ impl KWayMerge {
         self.chunks.retain(|x| !x.is_done());
 
         if self.chunks.len() == 0 {
+            self.iter_count += 1;
+            self.item_count += self.output.len();
+            store_table1_part(&self.output, self.iter_count, Some("_final"));
             return Ok(KWayMergeState::Done);
         }
 
