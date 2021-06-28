@@ -137,13 +137,13 @@ impl PoSpace {
             });
             if buffer.len() >= BUCKET_SIZE {
                 // Write to disk
-                store_table1_part(&buffer, index);
+                store_table1_part(&buffer, index, None);
                 index += 1;
                 buffer.clear();
             }
         }
 
-        store_table1_part(&buffer, index);
+        store_table1_part(&buffer, index, None);
 
         sort_table1();
 
@@ -211,7 +211,7 @@ impl PoSpace {
                                 entry2.1.clone(),
                                 entry2.2.clone(),
                             ))
-                                .unwrap();
+                            .unwrap();
                         }
                     }
                 }
@@ -264,7 +264,7 @@ impl PoSpace {
                                 entry2.3.clone(),
                                 entry2.4.clone(),
                             ))
-                                .unwrap();
+                            .unwrap();
                         }
                     }
                 }
@@ -317,15 +317,15 @@ mod tests {
         pos2.run_phase_1();
 
         for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
 
         for tuple in pos1.table3.iter().zip(pos2.table3.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
 
         for tuple in pos1.table4.iter().zip(pos2.table4.iter()) {
-            assert_eq!(tuple.0.0, tuple.1.0);
+            assert_eq!(tuple.0 .0, tuple.1 .0);
         }
     }
 }

@@ -1,8 +1,9 @@
 use glob::glob;
 use std::{
+    cmp::max,
     collections::VecDeque,
     fs::File,
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -12,7 +13,15 @@ use serde::{Deserialize, Serialize};
 
 pub const BUCKET_SIZE: usize = 20_000;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+lazy_static! {
+    static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
+        x: u64::MAX,
+        y: u64::MAX
+    })
+    .unwrap() as usize;
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Table1Entry {
     pub x: u64,
     pub y: u64,
@@ -36,8 +45,13 @@ pub struct PlotEntry {
     pub offset: u64,
 }
 
-pub fn store_table1_part(buffer: &[Table1Entry], index: usize) {
-    let mut new_file = File::create(Path::new("data").join(format!("table1_{}", index))).unwrap();
+pub fn store_table1_part(buffer: &[Table1Entry], index: usize, suffix: Option<&str>) {
+    let mut new_file = File::create(Path::new("data").join(format!(
+        "table1_{}{}",
+        index,
+        suffix.or(Some("")).unwrap()
+    )))
+    .unwrap();
     let bin_data = buffer
         .iter()
         .flat_map(|entry| return bincode::serialize(entry).unwrap())
@@ -49,8 +63,6 @@ pub fn sort_table1() {
     // Sort each bucket
     let mut chunks_count = 0;
     let mut parts = Vec::new();
-    let serialized_size =
-        bincode::serialized_size(&Table1Entry { x: 12345, y: 12345 }).unwrap() as usize;
 
     for entry in glob("data/table1_*").unwrap() {
         match entry {
@@ -60,7 +72,7 @@ pub fn sort_table1() {
                     let mut file = File::open(&path).unwrap();
                     file.read_to_end(&mut buffer).unwrap();
                     let mut entries = buffer
-                        .chunks(serialized_size as usize)
+                        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
                         .map(|chunk| {
                             return bincode::deserialize(&chunk).unwrap();
                         })
@@ -89,11 +101,11 @@ pub fn sort_table1() {
     }
 
     // K-Way Merge sort
-    println!("K-Way merging for table 1 ...");
-    let mut state = KWayMergeState::new(&parts, serialized_size);
 
     // Load BUCKET_SIZE / (chunks_count - 1) buckets into RAM
     if chunks_count > 1 {
+        println!("K-Way merging for table 1 ...");
+        let mut state = KWayMerge::new(&parts, *TABLE1_SERIALIZED_ENTRY_SIZE);
         println!(
             "{:?}",
             state
@@ -103,40 +115,54 @@ pub fn sort_table1() {
                 .collect::<Vec<usize>>()
         );
 
-        println!(
-            "{:?}",
-            state
-                .chunks
-                .iter()
-                .map(|p| p.remaining)
-                .collect::<Vec<usize>>()
-        )
+        loop {
+            match state.run_iteration().unwrap() {
+                KWayMergeState::Success => {}
+                KWayMergeState::Done => break,
+            }
+        }
+
+        println!("K-Way merge done");
 
         // println!("State: {:?}", state);
     }
 }
 
 #[derive(Debug)]
-struct KWayMergeState {
-    chunks: Vec<MergeChunk>,
-    output: Vec<Table1Entry>,
+enum KWayMergeState {
+    Success,
+    Done,
 }
 
-impl KWayMergeState {
+#[derive(Debug)]
+struct KWayMerge {
+    chunks: Vec<MergeChunk>,
+    output: Vec<Table1Entry>,
+    iter_count: usize,
+}
+
+impl KWayMerge {
     pub fn new(paths: &[PathBuf], entry_size: usize) -> Self {
-        let merge_chunck_size = BUCKET_SIZE / (paths.len() - 1);
-        let mut state = KWayMergeState {
+        let merge_chunk_size = BUCKET_SIZE / (paths.len() - 1) * entry_size;
+        println!("Chunk size: {}", merge_chunk_size);
+        println!("Nb of chunks: {}", paths.len() - 1);
+        println!("Entry size: {}", entry_size);
+        println!("Entry per chunk: {}", BUCKET_SIZE);
+        let mut state = Self {
             chunks: Vec::new(),
             output: Vec::new(),
+            iter_count: 0,
         };
+
+        let mut counter = 1;
 
         for path in paths {
             let mut file = File::open(path).unwrap();
-            let mut buffer = vec![0u8; entry_size * merge_chunck_size];
+            let mut buffer = vec![0u8; merge_chunk_size];
             let amount = file.read(&mut buffer).unwrap();
             println!("Red {} bytes", amount);
             let entries = buffer
-                .chunks(entry_size as usize)
+                .chunks(entry_size)
                 .filter_map(|chunk| {
                     if chunk.iter().all(|c| c == &0u8) {
                         return None;
@@ -145,40 +171,163 @@ impl KWayMergeState {
                     }
                 })
                 .collect::<VecDeque<Table1Entry>>();
-            let total_size = file.metadata().unwrap().len() as usize / entry_size;
+            let file_size = file.metadata().unwrap().len() as usize;
             state.chunks.push(MergeChunk {
-                remaining: total_size - entries.len(),
+                id: counter,
+                next_seek_pos: entries.len() * *TABLE1_SERIALIZED_ENTRY_SIZE,
                 content: entries,
-                indice: 0,
-                total_size,
-                file_path: path.clone().into_os_string().into_string().unwrap(),
+                file,
+                total_size: file_size,
+                remaining_size: if file_size > merge_chunk_size {
+                    file_size - merge_chunk_size
+                } else {
+                    0
+                },
+                chunk_size: merge_chunk_size,
             });
+            counter += 1;
         }
+
+        for chunk in state.chunks.iter() {
+            println!("Remaining: {}", chunk.remaining_size);
+            println!(
+                "Is ok: {}",
+                chunk.remaining_size % *TABLE1_SERIALIZED_ENTRY_SIZE == 0
+            );
+        }
+
         state
     }
 
-    pub fn run_iteration(&mut self) -> Result<(), ()> {}
+    pub fn run_iteration(&mut self) -> Result<KWayMergeState, ()> {
+        // Find the min
+        let min = self.find_min_chunk().unwrap();
+        let min_chunk = &mut self.chunks[min];
 
-    pub fn find_min_chunk(&self) -> usize {
-        self.chunks
-            .iter()
-            .map(|c| c.content[c.indice])
-            .collect::<Vec<Table1Entry>>()
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, x)| x)
-            .unwrap()
-            .0
+        // Move the minimum value to the output vec
+        self.output.push(min_chunk.content[0]);
+
+        // Delete the minimum from the chunk (increase the index)
+        min_chunk.content.pop_front();
+
+        // Write output if it is full
+        if self.output.len() >= BUCKET_SIZE {
+            self.iter_count += 1;
+            store_table1_part(&self.output, self.iter_count, Some("_final"));
+            self.output.clear();
+        }
+
+        // Load new data into chunks if they are empty
+        for chunk in self.chunks.iter_mut() {
+            if chunk.content.len() == 0 {
+                // Refill chunk
+                chunk.refill();
+            }
+        }
+
+        self.chunks.retain(|x| !x.is_done());
+
+        if self.chunks.len() == 0 {
+            return Ok(KWayMergeState::Done);
+        }
+
+        return Ok(KWayMergeState::Success);
+    }
+
+    pub fn find_min_chunk(&self) -> Result<usize, ChunkError> {
+        if self.chunks.iter().all(|c| c.content.get(0).is_some()) {
+            Ok(self
+                .chunks
+                .iter()
+                .map(|c| c.content[0])
+                .collect::<Vec<Table1Entry>>()
+                .iter()
+                .enumerate()
+                .min_by_key(|&(_, x)| x)
+                .unwrap()
+                .0)
+        } else {
+            println!(
+                "Remaining: {:?}",
+                self.chunks
+                    .iter()
+                    .map(|x| x.remaining_size)
+                    .collect::<Vec<usize>>()
+            );
+            println!(
+                "Content len: {:?}",
+                self.chunks
+                    .iter()
+                    .map(|x| x.content.len())
+                    .collect::<Vec<usize>>()
+            );
+            return Err(ChunkError::EmptyChunksWhileFetchingMininum);
+        }
     }
 }
 
 #[derive(Debug)]
 struct MergeChunk {
-    file_path: String,
-    content: VecDeque<Table1Entry>,
-    indice: usize,
+    id: u32,
+    file: File,
+    pub content: VecDeque<Table1Entry>,
+    next_seek_pos: usize,
     total_size: usize,
-    remaining: usize,
+    chunk_size: usize,
+    remaining_size: usize,
+}
+
+impl MergeChunk {
+    pub fn refill(&mut self) {
+        if self.content.len() == 0 && self.remaining_size > 0 {
+            println!("Refilling chunk ...");
+
+            let amount;
+            let mut buffer;
+            if self.remaining_size > self.chunk_size {
+                // Read 1 chunk
+                buffer = vec![0u8; self.chunk_size];
+                amount = self.file.read(&mut buffer).unwrap();
+            } else {
+                // Read to end
+                buffer = Vec::new();
+                amount = self.file.read_to_end(&mut buffer).unwrap();
+            }
+
+            println!(
+                "Amount is ok: {}",
+                amount % *TABLE1_SERIALIZED_ENTRY_SIZE == 0
+            );
+            self.remaining_size -= amount;
+            let entries = buffer
+                .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE as usize)
+                .filter_map(|chunk| {
+                    if chunk.iter().all(|c| c == &0u8) {
+                        return None;
+                    } else {
+                        return Some(bincode::deserialize(&chunk).unwrap());
+                    }
+                })
+                .collect::<VecDeque<Table1Entry>>();
+            println!("Amount: {}", amount);
+            println!("New entries len: {}", entries.len());
+            println!("Remaining bytes: {}", self.remaining_size);
+            self.content = entries;
+        } else {
+            println!("Not refilling");
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        return self.content.len() == 0 && self.remaining_size == 0;
+    }
+}
+
+#[derive(Debug)]
+enum ChunkError {
+    ContentNotEmpty,
+    NoMoreData,
+    EmptyChunksWhileFetchingMininum,
 }
 
 fn compress<T>(writer: T) -> DeflateEncoder<T>
