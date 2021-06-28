@@ -30,22 +30,17 @@ fn setup_storage() {
 fn test_kway_merge() {
     setup_storage();
     sort_table("test_data", "test_data/table1_*", 10);
-    let entries = glob("test_data/table1_*_final")
-        .unwrap()
-        .filter_map(Result::ok)
-        .flat_map(|f| {
-            let mut file = File::open(f).unwrap();
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).unwrap();
-            buffer
-                .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
-                .map(|chunk| {
-                    return bincode::deserialize(&chunk).unwrap();
-                })
-                .collect::<Vec<Table1Entry>>()
+    let mut file = File::open("test_data/table1_final").unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+    let entries = buffer
+        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+        .map(|chunk| {
+            return bincode::deserialize(&chunk).unwrap();
         })
         .collect::<Vec<Table1Entry>>();
     let mut last = entries[0].y;
+    assert_eq!(300, entries.len());
     for entry in entries {
         assert!(entry.y >= last, "Final table not correctly sorted");
         last = entry.y;

@@ -50,11 +50,15 @@ pub fn store_table1_part(buffer: &[Table1Entry], folder: &str, index: usize, suf
         suffix.or(Some("")).unwrap()
     )))
     .unwrap();
-    let bin_data = buffer
+    let bin_data = serialize(buffer);
+    new_file.write_all(&bin_data).unwrap();
+}
+
+pub fn serialize(buffer: &[Table1Entry]) -> Vec<u8> {
+    buffer
         .iter()
         .flat_map(|entry| return bincode::serialize(entry).unwrap())
-        .collect::<Vec<u8>>();
-    new_file.write_all(&bin_data).unwrap();
+        .collect::<Vec<u8>>()
 }
 
 pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize) {
@@ -148,6 +152,7 @@ struct KWayMerge {
     output: Vec<Table1Entry>,
     iter_count: usize,
     item_count: usize,
+    output_file: File,
 }
 
 impl KWayMerge {
@@ -165,6 +170,7 @@ impl KWayMerge {
             iter_count: 0,
             item_count: 0,
             output_folder: String::from(output_folder),
+            output_file: File::create(Path::new(output_folder).join("table1_final")).unwrap(),
         };
 
         let mut id_counter = 1;
@@ -206,14 +212,7 @@ impl KWayMerge {
 
         // Write output if it is full
         if self.output.len() >= self.entries_per_chunk {
-            self.iter_count += 1;
-            self.item_count += self.output.len();
-            store_table1_part(
-                &self.output,
-                &self.output_folder,
-                self.iter_count,
-                Some("_final"),
-            );
+            self.write_output();
             self.output.clear();
         }
 
@@ -221,14 +220,7 @@ impl KWayMerge {
         self.chunks.retain(|x| !x.is_done());
 
         if self.chunks.len() == 0 {
-            self.iter_count += 1;
-            self.item_count += self.output.len();
-            store_table1_part(
-                &self.output,
-                &self.output_folder,
-                self.iter_count,
-                Some("_final"),
-            );
+            self.write_output();
             return Ok(KWayMergeState::Done);
         }
 
@@ -250,6 +242,13 @@ impl KWayMerge {
         } else {
             return Err(ChunkError::EmptyChunksWhileFetchingMininum);
         }
+    }
+
+    fn write_output(&mut self) {
+        self.iter_count += 1;
+        self.item_count += self.output.len();
+        let bin_data = serialize(&self.output);
+        self.output_file.write_all(&bin_data).unwrap();
     }
 }
 
