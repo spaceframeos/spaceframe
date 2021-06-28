@@ -1,4 +1,3 @@
-use glob::glob;
 use rand::thread_rng;
 use rand::Rng;
 use spaceframe_pospace::storage::sort_table;

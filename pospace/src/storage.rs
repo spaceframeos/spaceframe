@@ -105,40 +105,25 @@ pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: u
 
     // K-Way Merge sort
 
-    // Load BUCKET_SIZE / (chunks_count - 1) buckets into RAM
     if chunks_count > 1 {
         println!("K-Way merging for table 1 ...");
+
         let mut state = KWayMerge::new(
             &parts,
             *TABLE1_SERIALIZED_ENTRY_SIZE,
             entries_per_chunk,
             tables_folder,
         );
-        println!(
-            "{:?}",
-            state
-                .chunks
-                .iter()
-                .map(|p| p.content.len())
-                .collect::<Vec<usize>>()
-        );
 
-        loop {
-            match state.run_iteration().unwrap() {
-                KWayMergeState::Success => {}
-                KWayMergeState::Done => break,
-            }
-        }
+        while state.run_iteration() != KWayMergeState::Done {}
 
         println!("K-Way merge done");
 
         println!("{} final entries written", state.item_count);
-
-        // println!("State: {:?}", state);
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum KWayMergeState {
     Success,
     Done,
@@ -193,7 +178,7 @@ impl KWayMerge {
         state
     }
 
-    pub fn run_iteration(&mut self) -> Result<KWayMergeState, ()> {
+    pub fn run_iteration(&mut self) -> KWayMergeState {
         // Load new data into chunks if they are empty
         for chunk in self.chunks.iter_mut() {
             // Refill chunk
@@ -221,10 +206,10 @@ impl KWayMerge {
 
         if self.chunks.len() == 0 {
             self.write_output();
-            return Ok(KWayMergeState::Done);
+            return KWayMergeState::Done;
         }
 
-        return Ok(KWayMergeState::Success);
+        return KWayMergeState::Success;
     }
 
     pub fn find_min_chunk(&self) -> Result<usize, ChunkError> {
