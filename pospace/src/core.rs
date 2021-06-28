@@ -15,7 +15,7 @@ use crate::{
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::{sort_table1, store_table1_part, Table1Entry, BUCKET_SIZE},
+    storage::{sort_table, store_table1_part, Table1Entry},
 };
 
 #[derive(Debug)]
@@ -135,17 +135,17 @@ impl PoSpace {
                 x: data.1.value,
                 y: data.0.value,
             });
-            if buffer.len() >= BUCKET_SIZE {
+            if buffer.len() >= 20_000 {
                 // Write to disk
-                store_table1_part(&buffer, index, None);
+                store_table1_part(&buffer, "data", index, None);
                 index += 1;
                 buffer.clear();
             }
         }
 
-        store_table1_part(&buffer, index, None);
+        store_table1_part(&buffer, "data", index, None);
 
-        sort_table1();
+        sort_table("data", "data/table1_*", 20_000);
 
         println!("Table 1 len: {}", self.table1.len());
 

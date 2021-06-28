@@ -1,20 +1,18 @@
 use glob::glob;
 use std::{
-    cmp::max,
     collections::VecDeque,
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
 use crate::bits::BitsWrapper;
-use flate2::{write::DeflateEncoder, Compression};
 use serde::{Deserialize, Serialize};
 
-pub const BUCKET_SIZE: usize = 20_000;
+// pub const ENTRIES_PER_CHUNK: usize = 20_000;
 
 lazy_static! {
-    static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
+    pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
         x: u64::MAX,
         y: u64::MAX
     })
@@ -45,8 +43,8 @@ pub struct PlotEntry {
     pub offset: u64,
 }
 
-pub fn store_table1_part(buffer: &[Table1Entry], index: usize, suffix: Option<&str>) {
-    let mut new_file = File::create(Path::new("data").join(format!(
+pub fn store_table1_part(buffer: &[Table1Entry], folder: &str, index: usize, suffix: Option<&str>) {
+    let mut new_file = File::create(Path::new(folder).join(format!(
         "table1_{}{}",
         index,
         suffix.or(Some("")).unwrap()
@@ -59,13 +57,13 @@ pub fn store_table1_part(buffer: &[Table1Entry], index: usize, suffix: Option<&s
     new_file.write_all(&bin_data).unwrap();
 }
 
-pub fn sort_table1() {
+pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize) {
     // Sort each bucket
     let mut chunks_count = 0;
     let mut parts = Vec::new();
 
     // Sort individual table parts
-    for entry in glob("data/table1_*").unwrap() {
+    for entry in glob(table_pattern).unwrap() {
         match entry {
             Ok(path) => {
                 if path.is_file() {
@@ -80,7 +78,7 @@ pub fn sort_table1() {
                         .collect::<Vec<Table1Entry>>();
 
                     entries.sort();
-                    let path = Path::new("data").join(format!(
+                    let path = Path::new(tables_folder).join(format!(
                         "{}_sorted",
                         String::from(path.file_name().unwrap().to_str().unwrap())
                     ));
@@ -106,7 +104,12 @@ pub fn sort_table1() {
     // Load BUCKET_SIZE / (chunks_count - 1) buckets into RAM
     if chunks_count > 1 {
         println!("K-Way merging for table 1 ...");
-        let mut state = KWayMerge::new(&parts, *TABLE1_SERIALIZED_ENTRY_SIZE);
+        let mut state = KWayMerge::new(
+            &parts,
+            *TABLE1_SERIALIZED_ENTRY_SIZE,
+            entries_per_chunk,
+            tables_folder,
+        );
         println!(
             "{:?}",
             state
@@ -139,6 +142,8 @@ enum KWayMergeState {
 
 #[derive(Debug)]
 struct KWayMerge {
+    entries_per_chunk: usize,
+    output_folder: String,
     chunks: Vec<MergeChunk>,
     output: Vec<Table1Entry>,
     iter_count: usize,
@@ -146,18 +151,20 @@ struct KWayMerge {
 }
 
 impl KWayMerge {
-    pub fn new(paths: &[PathBuf], entry_size: usize) -> Self {
-        let chunk_size = BUCKET_SIZE / (paths.len() - 1) * entry_size;
-        println!("Chunk size: {}", chunk_size);
-        println!("Nb of chunks: {}", paths.len() - 1);
-        println!("Entry size: {}", entry_size);
-        println!("Entry per chunk: {}", BUCKET_SIZE);
-
+    pub fn new(
+        paths: &[PathBuf],
+        entry_size: usize,
+        entries_per_chunk: usize,
+        output_folder: &str,
+    ) -> Self {
+        let chunk_size = entries_per_chunk / (paths.len() - 1) * entry_size;
         let mut state = Self {
+            entries_per_chunk,
             chunks: Vec::new(),
             output: Vec::new(),
             iter_count: 0,
             item_count: 0,
+            output_folder: String::from(output_folder),
         };
 
         let mut id_counter = 1;
@@ -198,10 +205,15 @@ impl KWayMerge {
         min_chunk.content.pop_front();
 
         // Write output if it is full
-        if self.output.len() >= BUCKET_SIZE {
+        if self.output.len() >= self.entries_per_chunk {
             self.iter_count += 1;
             self.item_count += self.output.len();
-            store_table1_part(&self.output, self.iter_count, Some("_final"));
+            store_table1_part(
+                &self.output,
+                &self.output_folder,
+                self.iter_count,
+                Some("_final"),
+            );
             self.output.clear();
         }
 
@@ -211,7 +223,12 @@ impl KWayMerge {
         if self.chunks.len() == 0 {
             self.iter_count += 1;
             self.item_count += self.output.len();
-            store_table1_part(&self.output, self.iter_count, Some("_final"));
+            store_table1_part(
+                &self.output,
+                &self.output_folder,
+                self.iter_count,
+                Some("_final"),
+            );
             return Ok(KWayMergeState::Done);
         }
 
@@ -286,19 +303,4 @@ impl MergeChunk {
 #[derive(Debug)]
 enum ChunkError {
     EmptyChunksWhileFetchingMininum,
-}
-
-fn compress<T>(writer: T) -> DeflateEncoder<T>
-where
-    T: Write,
-{
-    DeflateEncoder::new(writer, Compression::default())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sort_buckets() {}
 }
