@@ -1,6 +1,6 @@
 use bitvec::{bitvec, order::Lsb0};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rand::{RngCore, rngs::OsRng};
+// use rand::{rngs::OsRng, RngCore};
 use spaceframe_pospace::{
     bits::{from_bits, to_bits, BitsWrapper},
     core::PoSpace,
@@ -24,7 +24,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let in_b = to_bits(0xcd, 10);
         let in_c = to_bits(0xef, 10);
         b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b]), black_box( &in_c));
+            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b]), black_box(&in_c));
         })
     });
 
@@ -36,16 +36,16 @@ fn criterion_benchmark(c: &mut Criterion) {
         let in_d = to_bits(0x5678, 16);
         let in_e = to_bits(0xef, 10);
         b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b, &in_c, &in_d]),  &in_e);
+            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b, &in_c, &in_d]), &in_e);
         })
     });
 
     c.bench_function("matching", |b| {
-        let pospace = PoSpace::new(14, b"some key");
+        let pospace = PoSpace::new(10, b"some key");
         let l = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1]);
         let r = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0]);
         b.iter(|| {
-            pospace.matching_naive(&l, &r);
+            pospace.matching_naive(black_box(&l), black_box(&r));
         })
     });
 
@@ -63,20 +63,20 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 }
 
-fn phase1_benchmark(c: &mut Criterion) {
-    let mut plot_seed = [0u8; 32];
-    OsRng.fill_bytes(&mut plot_seed);
-    let mut pos = PoSpace::new(10, &plot_seed);
+// fn phase1_benchmark(c: &mut Criterion) {
+//     let mut plot_seed = [0u8; 32];
+//     OsRng.fill_bytes(&mut plot_seed);
+//     let mut pos = PoSpace::new(10, &plot_seed);
 
-    c.bench_function("run_phase1", |b| {
-        b.iter(|| pos.run_phase_1());
-    });
-}
+//     c.bench_function("run_phase1", |b| {
+//         b.iter(|| pos.run_phase_1());
+//     });
+// }
 
 criterion_group!(benches, criterion_benchmark);
-criterion_group!{
-    name = phase1;
-    config = Criterion::default().sample_size(50).significance_level(0.1).noise_threshold(0.05);
-    targets = phase1_benchmark
-}
-criterion_main!(benches, phase1);
+// criterion_group! {
+//     name = phase1;
+//     config = Criterion::default().sample_size(50).significance_level(0.1).noise_threshold(0.05);
+//     targets = phase1_benchmark
+// }
+criterion_main!(benches);

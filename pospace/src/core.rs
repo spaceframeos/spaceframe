@@ -1,12 +1,6 @@
-use flate2::{
-    write::{DeflateDecoder, DeflateEncoder},
-    Compression,
-};
 use rayon::prelude::*;
 use std::{
-    fs::{create_dir_all, remove_dir, remove_dir_all, File},
-    io::Write,
-    path::Path,
+    fs::{create_dir_all, remove_dir_all},
     sync::mpsc::channel,
 };
 
@@ -15,7 +9,7 @@ use crate::{
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::{sort_table, store_table1_part, Table1Entry},
+    storage::{sort_table, store_table_part, Table1Entry},
 };
 
 #[derive(Debug)]
@@ -137,15 +131,15 @@ impl PoSpace {
             });
             if buffer.len() >= 20_000 {
                 // Write to disk
-                store_table1_part(&buffer, "data", index, None);
+                store_table_part(&buffer, "data", index, None);
                 index += 1;
                 buffer.clear();
             }
         }
 
-        store_table1_part(&buffer, "data", index, None);
+        store_table_part(&buffer, "data", index, None);
 
-        sort_table("data", "data/table1_*", 20_000);
+        sort_table::<Table1Entry>("data", "data/table1_*", 20_000);
 
         println!("Table 1 len: {}", self.table1.len());
 

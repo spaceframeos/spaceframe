@@ -2,7 +2,7 @@ use rand::thread_rng;
 use rand::Rng;
 use spaceframe_pospace::storage::sort_table;
 use spaceframe_pospace::storage::TABLE1_SERIALIZED_ENTRY_SIZE;
-use spaceframe_pospace::storage::{store_table1_part, Table1Entry};
+use spaceframe_pospace::storage::{store_table_part, Table1Entry};
 use std::fs::create_dir_all;
 use std::fs::remove_dir_all;
 use std::fs::File;
@@ -21,14 +21,14 @@ fn setup_storage() {
                 };
             })
             .collect::<Vec<Table1Entry>>();
-        store_table1_part(&data, "test_data", i as usize, None);
+        store_table_part(&data, "test_data", i as usize, None);
     }
 }
 
 #[test]
-fn test_kway_merge() {
+fn test_kway_merge_table1() {
     setup_storage();
-    sort_table("test_data", "test_data/table1_*", 10);
+    sort_table::<Table1Entry>("test_data", "test_data/table1_*", 10);
     let mut file = File::open("test_data/table1_final").unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
@@ -41,16 +41,15 @@ fn test_kway_merge() {
     let mut last = entries[0].y;
     assert_eq!(300, entries.len());
     for entry in entries {
-        // assert!(entry.y >= last, "Final table not correctly sorted");
-        println!("y: {}", entry.y);
+        assert!(entry.y >= last, "Final table not correctly sorted");
         last = entry.y;
     }
 }
 
 #[test]
-fn test_kway_merge_big_chunk() {
+fn test_kway_merge_table1_big_chunk() {
     setup_storage();
-    sort_table("test_data", "test_data/table1_*", 1000);
+    sort_table::<Table1Entry>("test_data", "test_data/table1_*", 1000);
     let mut file = File::open("test_data/table1_final").unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();

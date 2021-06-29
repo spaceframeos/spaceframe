@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::bits::BitsWrapper;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 // pub const ENTRIES_PER_CHUNK: usize = 20_000;
 
@@ -44,7 +44,10 @@ pub struct PlotEntry {
     pub offset: u64,
 }
 
-pub fn store_table1_part(buffer: &[Table1Entry], folder: &str, index: usize, suffix: Option<&str>) {
+pub fn store_table_part<T>(buffer: &[T], folder: &str, index: usize, suffix: Option<&str>)
+where
+    T: Serialize,
+{
     let mut new_file = File::create(Path::new(folder).join(format!(
         "table1_{}{}",
         index,
@@ -55,17 +58,20 @@ pub fn store_table1_part(buffer: &[Table1Entry], folder: &str, index: usize, suf
     new_file.write_all(&bin_data).unwrap();
 }
 
-pub fn serialize(buffer: &[Table1Entry]) -> Vec<u8> {
+pub fn serialize<T>(buffer: &[T]) -> Vec<u8>
+where
+    T: Serialize,
+{
     buffer
         .iter()
         .flat_map(|entry| bincode::serialize(entry).unwrap())
         .collect::<Vec<u8>>()
 }
 
-pub fn deserialize<'a, O, I>(buffer: &'a [u8]) -> O
+pub fn deserialize<'de, O, I>(buffer: &'de [u8]) -> O
 where
     O: FromIterator<I>,
-    I: Deserialize<'a>,
+    I: Deserialize<'de>,
 {
     buffer
         .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
@@ -73,12 +79,15 @@ where
         .collect::<O>()
 }
 
-pub fn sort_table_part(path: &Path) -> Option<PathBuf> {
+pub fn sort_table_part<T>(path: &Path) -> Option<PathBuf>
+where
+    T: Serialize + DeserializeOwned + Ord,
+{
     if path.is_file() {
         let mut buffer = Vec::new();
         let mut file = File::open(&path).unwrap();
         file.read_to_end(&mut buffer).unwrap();
-        let mut entries = deserialize::<Vec<Table1Entry>, Table1Entry>(&buffer);
+        let mut entries = deserialize::<Vec<T>, T>(&buffer);
 
         entries.sort();
 
@@ -96,14 +105,17 @@ pub fn sort_table_part(path: &Path) -> Option<PathBuf> {
     return None;
 }
 
-pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize) {
+pub fn sort_table<T>(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize)
+where
+    T: Serialize + DeserializeOwned + Ord,
+{
     // Sort each bucket
     let mut chunks_count = 0;
     let mut parts = Vec::new();
 
     // Sort individual table parts
     for entry in glob(table_pattern).unwrap().filter_map(Result::ok) {
-        sort_table_part(&entry).map(|path| {
+        sort_table_part::<T>(&entry).map(|path| {
             chunks_count += 1;
             parts.push(path);
         });
