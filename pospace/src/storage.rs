@@ -57,8 +57,36 @@ pub fn store_table1_part(buffer: &[Table1Entry], folder: &str, index: usize, suf
 pub fn serialize(buffer: &[Table1Entry]) -> Vec<u8> {
     buffer
         .iter()
-        .flat_map(|entry| return bincode::serialize(entry).unwrap())
+        .flat_map(|entry| bincode::serialize(entry).unwrap())
         .collect::<Vec<u8>>()
+}
+
+pub fn sort_table_part(path: &Path) -> Option<PathBuf> {
+    if path.is_file() {
+        let mut buffer = Vec::new();
+        let mut file = File::open(&path).unwrap();
+        file.read_to_end(&mut buffer).unwrap();
+        let mut entries = buffer
+            .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+            .map(|chunk| {
+                return bincode::deserialize(&chunk).unwrap();
+            })
+            .collect::<Vec<Table1Entry>>();
+
+        entries.sort();
+
+        let out_path = path.parent().unwrap().join(format!(
+            "{}_sorted",
+            String::from(path.file_name().unwrap().to_str().unwrap())
+        ));
+
+        let mut sorted_file = File::create(&out_path).unwrap();
+        let bin_data = serialize(&entries);
+        sorted_file.write_all(&bin_data).unwrap();
+
+        return Some(out_path);
+    }
+    return None;
 }
 
 pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize) {
@@ -67,40 +95,11 @@ pub fn sort_table(tables_folder: &str, table_pattern: &str, entries_per_chunk: u
     let mut parts = Vec::new();
 
     // Sort individual table parts
-    for entry in glob(table_pattern).unwrap() {
-        match entry {
-            Ok(path) => {
-                if path.is_file() {
-                    let mut buffer = Vec::new();
-                    let mut file = File::open(&path).unwrap();
-                    file.read_to_end(&mut buffer).unwrap();
-                    let mut entries = buffer
-                        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
-                        .map(|chunk| {
-                            return bincode::deserialize(&chunk).unwrap();
-                        })
-                        .collect::<Vec<Table1Entry>>();
-
-                    entries.sort();
-                    let path = Path::new(tables_folder).join(format!(
-                        "{}_sorted",
-                        String::from(path.file_name().unwrap().to_str().unwrap())
-                    ));
-                    let mut sorted_file = File::create(&path).unwrap();
-
-                    parts.push(path);
-
-                    let bin_data = entries
-                        .iter()
-                        .flat_map(|x| bincode::serialize(x).unwrap())
-                        .collect::<Vec<u8>>();
-
-                    sorted_file.write_all(&bin_data).unwrap();
-                    chunks_count += 1;
-                }
-            }
-            Err(_) => todo!(),
-        }
+    for entry in glob(table_pattern).unwrap().filter_map(Result::ok) {
+        sort_table_part(&entry).map(|path| {
+            chunks_count += 1;
+            parts.push(path);
+        });
     }
 
     // K-Way Merge sort
