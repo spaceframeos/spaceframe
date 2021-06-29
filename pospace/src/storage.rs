@@ -3,6 +3,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::{Read, Write},
+    iter::FromIterator,
     path::{Path, PathBuf},
 };
 
@@ -61,17 +62,23 @@ pub fn serialize(buffer: &[Table1Entry]) -> Vec<u8> {
         .collect::<Vec<u8>>()
 }
 
+pub fn deserialize<'a, O, I>(buffer: &'a [u8]) -> O
+where
+    O: FromIterator<I>,
+    I: Deserialize<'a>,
+{
+    buffer
+        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+        .map(|chunk| bincode::deserialize(&chunk).unwrap())
+        .collect::<O>()
+}
+
 pub fn sort_table_part(path: &Path) -> Option<PathBuf> {
     if path.is_file() {
         let mut buffer = Vec::new();
         let mut file = File::open(&path).unwrap();
         file.read_to_end(&mut buffer).unwrap();
-        let mut entries = buffer
-            .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
-            .map(|chunk| {
-                return bincode::deserialize(&chunk).unwrap();
-            })
-            .collect::<Vec<Table1Entry>>();
+        let mut entries = deserialize::<Vec<Table1Entry>, Table1Entry>(&buffer);
 
         entries.sort();
 
@@ -264,16 +271,7 @@ impl MergeChunk {
             self.remaining_size -= amount;
 
             // Deserilalize entries
-            let entries = buffer
-                .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE as usize)
-                .filter_map(|chunk| {
-                    if chunk.iter().all(|c| c == &0u8) {
-                        return None;
-                    } else {
-                        return Some(bincode::deserialize(&chunk).unwrap());
-                    }
-                })
-                .collect::<VecDeque<Table1Entry>>();
+            let entries = deserialize(&buffer);
             self.content = entries;
         }
     }
