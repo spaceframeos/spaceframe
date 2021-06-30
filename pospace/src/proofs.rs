@@ -1,6 +1,12 @@
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{Bits, bits::BitsWrapper, constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M}, f1_calculator::F1Calculator, fx_calculator::FXCalculator};
+use crate::{
+    bits::BitsWrapper,
+    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M},
+    f1_calculator::F1Calculator,
+    fx_calculator::FXCalculator,
+    Bits,
+};
 
 pub struct Proof {
     items: Vec<BitsWrapper>,
@@ -56,10 +62,10 @@ pub fn verify_prove(proof: Proof, plot_seed: &[u8]) -> bool {
     let fxcalc = FXCalculator::new(proof.k);
     let mut table2 = Vec::new();
     for i in (0..f1y.len()).step_by(2) {
-        let f2y = fxcalc.calculate_fn(&[
-            &proof.items[i].bits,
-            &proof.items[i + 1].bits
-        ], &f1y[i].bits);
+        let f2y = fxcalc.calculate_fn(
+            &[&proof.items[i].bits, &proof.items[i + 1].bits],
+            &f1y[i].bits,
+        );
         table2.push(BitsWrapper::new(f2y));
     }
 
@@ -72,15 +78,18 @@ pub fn verify_prove(proof: Proof, plot_seed: &[u8]) -> bool {
     }
 
     println!("{:?}", table2.len());
-    
+
     let mut table3 = Vec::new();
     for i in (0..f1y.len()).step_by(4) {
-        let f3y = fxcalc.calculate_fn(&[
-            &proof.items[i].bits,
-            &proof.items[i + 1].bits,
-            &proof.items[i + 2].bits,
-            &proof.items[i + 3].bits,
-        ], &table2[i / 2].bits);
+        let f3y = fxcalc.calculate_fn(
+            &[
+                &proof.items[i].bits,
+                &proof.items[i + 1].bits,
+                &proof.items[i + 2].bits,
+                &proof.items[i + 3].bits,
+            ],
+            &table2[i / 2].bits,
+        );
         table3.push(BitsWrapper::new(f3y));
     }
 
@@ -91,28 +100,32 @@ pub fn verify_prove(proof: Proof, plot_seed: &[u8]) -> bool {
             return false;
         }
     }
-    
-    let f4y = fxcalc.calculate_fn(&[
-        &proof.items[0].bits,
-        &proof.items[1].bits,
-        &proof.items[2].bits,
-        &proof.items[3].bits,
-        &proof.items[4].bits,
-        &proof.items[5].bits,
-        &proof.items[6].bits,
-        &proof.items[7].bits,
-    ], &table3[0].bits);
 
-    return f4y[..proof.k] == proof.challenge
+    let f4y = fxcalc.calculate_fn(
+        &[
+            &proof.items[0].bits,
+            &proof.items[1].bits,
+            &proof.items[2].bits,
+            &proof.items[3].bits,
+            &proof.items[4].bits,
+            &proof.items[5].bits,
+            &proof.items[6].bits,
+            &proof.items[7].bits,
+        ],
+        &table3[0].bits,
+    );
+
+    return f4y[..proof.k] == proof.challenge;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{core::PoSpace};
-    use bitvec::prelude::*;
     use super::*;
+    use crate::core::PoSpace;
+    use bitvec::prelude::*;
 
     #[test]
+    #[ignore]
     fn test_proving() {
         let k = 12;
         let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";

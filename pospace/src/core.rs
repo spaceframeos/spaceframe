@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
+    path::Path,
     sync::mpsc::channel,
 };
 
@@ -9,7 +10,7 @@ use crate::{
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::{sort_table, store_table_part, Table1Entry},
+    storage::{sort_table_on_disk, store_table_part, Table1Entry, ENTRIES_PER_CHUNK},
 };
 
 #[derive(Debug)]
@@ -123,23 +124,31 @@ impl PoSpace {
 
         println!("Calculating table 1 ...");
         let mut buffer = Vec::new();
-        let mut index = 1;
+        let mut counter = 1;
         while let Ok(data) = receiver.recv() {
             buffer.push(Table1Entry {
                 x: data.1.value,
                 y: data.0.value,
             });
-            if buffer.len() >= 20_000 {
+            if buffer.len() == ENTRIES_PER_CHUNK {
                 // Write to disk
-                store_table_part(&buffer, "data", index, None);
-                index += 1;
+                store_table_part(
+                    &buffer,
+                    &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
+                );
+                counter += 1;
                 buffer.clear();
             }
         }
 
-        store_table_part(&buffer, "data", index, None);
+        if buffer.len() > 0 {
+            store_table_part(
+                &buffer,
+                &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
+            );
+        }
 
-        sort_table::<Table1Entry>("data", "data/table1_*", 20_000);
+        sort_table_on_disk::<Table1Entry>(1, "data", "data/table1_raw_*", ENTRIES_PER_CHUNK);
 
         println!("Table 1 len: {}", self.table1.len());
 

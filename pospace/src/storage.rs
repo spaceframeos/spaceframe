@@ -10,7 +10,8 @@ use std::{
 use crate::bits::BitsWrapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-// pub const ENTRIES_PER_CHUNK: usize = 20_000;
+/// 1 MB per chunk
+pub const ENTRIES_PER_CHUNK: usize = 65_536;
 
 lazy_static! {
     pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
@@ -44,16 +45,11 @@ pub struct PlotEntry {
     pub offset: u64,
 }
 
-pub fn store_table_part<T>(buffer: &[T], folder: &str, index: usize, suffix: Option<&str>)
+pub fn store_table_part<T>(buffer: &[T], path: &Path)
 where
     T: Serialize,
 {
-    let mut new_file = File::create(Path::new(folder).join(format!(
-        "table1_{}{}",
-        index,
-        suffix.or(Some("")).unwrap()
-    )))
-    .unwrap();
+    let mut new_file = File::create(path).unwrap();
     let bin_data = serialize(buffer);
     new_file.write_all(&bin_data).unwrap();
 }
@@ -79,7 +75,7 @@ where
         .collect::<O>()
 }
 
-pub fn sort_table_part<T>(path: &Path) -> Option<PathBuf>
+pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize) -> Option<PathBuf>
 where
     T: Serialize + DeserializeOwned + Ord,
 {
@@ -91,22 +87,24 @@ where
 
         entries.sort();
 
-        let out_path = path.parent().unwrap().join(format!(
-            "{}_sorted",
-            String::from(path.file_name().unwrap().to_str().unwrap())
-        ));
+        let out_path = path
+            .parent()
+            .unwrap()
+            .join(format!("table{}_sorted_{}", table_index, part_index));
 
-        let mut sorted_file = File::create(&out_path).unwrap();
-        let bin_data = serialize(&entries);
-        sorted_file.write_all(&bin_data).unwrap();
+        store_table_part(&entries, &out_path);
 
         return Some(out_path);
     }
     return None;
 }
 
-pub fn sort_table<T>(tables_folder: &str, table_pattern: &str, entries_per_chunk: usize)
-where
+pub fn sort_table_on_disk<T>(
+    table_index: usize,
+    tables_folder: &str,
+    glob_pattern: &str,
+    entries_per_chunk: usize,
+) where
     T: Serialize + DeserializeOwned + Ord,
 {
     // Sort each bucket
@@ -114,8 +112,12 @@ where
     let mut parts = Vec::new();
 
     // Sort individual table parts
-    for entry in glob(table_pattern).unwrap().filter_map(Result::ok) {
-        sort_table_part::<T>(&entry).map(|path| {
+    for (index, entry) in glob(glob_pattern)
+        .unwrap()
+        .filter_map(Result::ok)
+        .enumerate()
+    {
+        sort_table_part::<T>(&entry, table_index, index + 1).map(|path| {
             chunks_count += 1;
             parts.push(path);
         });
@@ -138,6 +140,8 @@ where
         println!("K-Way merge done");
 
         println!("{} final entries written", state.item_count);
+    } else {
+        // TODO rename file to final
     }
 }
 
@@ -271,11 +275,11 @@ impl MergeChunk {
             let amount;
             let mut buffer;
             if self.remaining_size > self.chunk_size {
-                // Read 1 chunk
+                // Read only 1 chunk
                 buffer = vec![0u8; self.chunk_size];
                 amount = self.file.read(&mut buffer).unwrap();
             } else {
-                // Read to end
+                // Read to the end
                 buffer = Vec::new();
                 amount = self.file.read_to_end(&mut buffer).unwrap();
             }

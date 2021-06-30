@@ -1,12 +1,14 @@
 use rand::thread_rng;
 use rand::Rng;
-use spaceframe_pospace::storage::sort_table;
+use spaceframe_pospace::storage::sort_table_on_disk;
+use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
 use spaceframe_pospace::storage::TABLE1_SERIALIZED_ENTRY_SIZE;
 use spaceframe_pospace::storage::{store_table_part, Table1Entry};
 use std::fs::create_dir_all;
 use std::fs::remove_dir_all;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 
 fn setup_storage() {
     let mut rng = thread_rng();
@@ -21,14 +23,17 @@ fn setup_storage() {
                 };
             })
             .collect::<Vec<Table1Entry>>();
-        store_table_part(&data, "test_data", i as usize, None);
+        store_table_part(
+            &data,
+            &Path::new("test_data").join(format!("table1_raw_{}", i)),
+        );
     }
 }
 
 #[test]
 fn test_kway_merge_table1() {
     setup_storage();
-    sort_table::<Table1Entry>("test_data", "test_data/table1_*", 10);
+    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_raw_*", 10);
     let mut file = File::open("test_data/table1_final").unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
@@ -49,7 +54,7 @@ fn test_kway_merge_table1() {
 #[test]
 fn test_kway_merge_table1_big_chunk() {
     setup_storage();
-    sort_table::<Table1Entry>("test_data", "test_data/table1_*", 1000);
+    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_*", ENTRIES_PER_CHUNK);
     let mut file = File::open("test_data/table1_final").unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
