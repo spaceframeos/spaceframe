@@ -11,7 +11,7 @@ use crate::bits::BitsWrapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// 1 GB per chunk
-pub const ENTRIES_PER_CHUNK: usize = 65_536 * 512;
+pub const ENTRIES_PER_CHUNK: usize = 65_536 * 1024;
 
 lazy_static! {
     pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {

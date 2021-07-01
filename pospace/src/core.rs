@@ -1,8 +1,8 @@
+use crossbeam::channel::bounded;
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
     path::Path,
-    sync::mpsc::{channel, sync_channel},
 };
 
 use crate::{
@@ -116,7 +116,7 @@ impl PoSpace {
         println!("Calculating table 1 ...");
 
         rayon::scope(|s| {
-            let (sender, receiver) = sync_channel(ENTRIES_PER_CHUNK);
+            let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
 
             s.spawn(|_| {
                 (0..table_size)
@@ -175,151 +175,151 @@ impl PoSpace {
         println!("Table 1 sorted on disk");
 
         // Table 2
-        let (sender, receiver) = channel();
+        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
 
-        (0..self.table1.len())
-            .into_par_iter()
-            .for_each_with(sender, |s, i| {
-                for j in 0..self.table1.len() {
-                    if i != j {
-                        let entry1 = &self.table1[i];
-                        let entry2 = &self.table1[j];
-                        let fx1 = &entry1.0;
-                        let fx2 = &entry2.0;
-                        if self.matching_naive(fx1, fx2) {
-                            let f2x = self
-                                .fx_calculator
-                                .calculate_fn(&[&entry1.1.bits, &entry2.1.bits], &fx1.bits);
-                            s.send((BitsWrapper::new(f2x), entry1.1.clone(), entry2.1.clone()))
-                                .unwrap();
-                        }
-                    }
-                }
-            });
+        // (0..self.table1.len())
+        //     .into_par_iter()
+        //     .for_each_with(sender, |s, i| {
+        //         for j in 0..self.table1.len() {
+        //             if i != j {
+        //                 let entry1 = &self.table1[i];
+        //                 let entry2 = &self.table1[j];
+        //                 let fx1 = &entry1.0;
+        //                 let fx2 = &entry2.0;
+        //                 if self.matching_naive(fx1, fx2) {
+        //                     let f2x = self
+        //                         .fx_calculator
+        //                         .calculate_fn(&[&entry1.1.bits, &entry2.1.bits], &fx1.bits);
+        //                     s.send((BitsWrapper::new(f2x), entry1.1.clone(), entry2.1.clone()))
+        //                         .unwrap();
+        //                 }
+        //             }
+        //         }
+        //     });
 
-        self.table2 = receiver.iter().collect();
-        self.table2.sort_by(|a, b| a.0.value.cmp(&b.0.value));
+        // self.table2 = receiver.iter().collect();
+        // self.table2.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
-        println!(
-            "Table 2 len: {} ({:.2}%)",
-            self.table2.len(),
-            self.table2.len() as f64 / table_size as f64 * 100.0
-        );
+        // println!(
+        //     "Table 2 len: {} ({:.2}%)",
+        //     self.table2.len(),
+        //     self.table2.len() as f64 / table_size as f64 * 100.0
+        // );
 
-        // Table 3
-        let (sender, receiver) = channel();
+        // // Table 3
+        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
 
-        (0..self.table2.len())
-            .into_par_iter()
-            .for_each_with(sender, |s, i| {
-                for j in 0..self.table2.len() {
-                    if i != j {
-                        let entry1 = &self.table2[i];
-                        let entry2 = &self.table2[j];
-                        let fx1 = &entry1.0;
-                        let fx2 = &entry2.0;
+        // (0..self.table2.len())
+        //     .into_par_iter()
+        //     .for_each_with(sender, |s, i| {
+        //         for j in 0..self.table2.len() {
+        //             if i != j {
+        //                 let entry1 = &self.table2[i];
+        //                 let entry2 = &self.table2[j];
+        //                 let fx1 = &entry1.0;
+        //                 let fx2 = &entry2.0;
 
-                        if self.matching_naive(fx1, fx2) {
-                            let f2x = self.fx_calculator.calculate_fn(
-                                &[
-                                    &entry1.1.bits,
-                                    &entry1.2.bits,
-                                    &entry2.1.bits,
-                                    &entry2.2.bits,
-                                ],
-                                &fx1.bits,
-                            );
-                            s.send((
-                                BitsWrapper::new(f2x),
-                                entry1.1.clone(),
-                                entry1.2.clone(),
-                                entry2.1.clone(),
-                                entry2.2.clone(),
-                            ))
-                            .unwrap();
-                        }
-                    }
-                }
-            });
+        //                 if self.matching_naive(fx1, fx2) {
+        //                     let f2x = self.fx_calculator.calculate_fn(
+        //                         &[
+        //                             &entry1.1.bits,
+        //                             &entry1.2.bits,
+        //                             &entry2.1.bits,
+        //                             &entry2.2.bits,
+        //                         ],
+        //                         &fx1.bits,
+        //                     );
+        //                     s.send((
+        //                         BitsWrapper::new(f2x),
+        //                         entry1.1.clone(),
+        //                         entry1.2.clone(),
+        //                         entry2.1.clone(),
+        //                         entry2.2.clone(),
+        //                     ))
+        //                     .unwrap();
+        //                 }
+        //             }
+        //         }
+        //     });
 
-        self.table3 = receiver.iter().collect();
-        self.table3.sort_by(|a, b| a.0.value.cmp(&b.0.value));
+        // self.table3 = receiver.iter().collect();
+        // self.table3.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
-        println!(
-            "Table 3 len: {} ({:.2}%)",
-            self.table3.len(),
-            self.table3.len() as f64 / table_size as f64 * 100.0
-        );
+        // println!(
+        //     "Table 3 len: {} ({:.2}%)",
+        //     self.table3.len(),
+        //     self.table3.len() as f64 / table_size as f64 * 100.0
+        // );
 
-        // Table 4
-        let (sender, receiver) = channel();
+        // // Table 4
+        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
 
-        (0..self.table3.len())
-            .into_par_iter()
-            .for_each_with(sender, |s, i| {
-                for j in 0..self.table3.len() {
-                    if i != j {
-                        let entry1 = &self.table3[i];
-                        let entry2 = &self.table3[j];
-                        let fx1 = &entry1.0;
-                        let fx2 = &entry2.0;
+        // (0..self.table3.len())
+        //     .into_par_iter()
+        //     .for_each_with(sender, |s, i| {
+        //         for j in 0..self.table3.len() {
+        //             if i != j {
+        //                 let entry1 = &self.table3[i];
+        //                 let entry2 = &self.table3[j];
+        //                 let fx1 = &entry1.0;
+        //                 let fx2 = &entry2.0;
 
-                        if self.matching_naive(fx1, fx2) {
-                            let f2x = self.fx_calculator.calculate_fn(
-                                &[
-                                    &entry1.1.bits,
-                                    &entry1.2.bits,
-                                    &entry1.3.bits,
-                                    &entry1.4.bits,
-                                    &entry2.1.bits,
-                                    &entry2.2.bits,
-                                    &entry2.3.bits,
-                                    &entry2.4.bits,
-                                ],
-                                &fx1.bits,
-                            );
-                            s.send((
-                                BitsWrapper::new(f2x),
-                                entry1.1.clone(),
-                                entry1.2.clone(),
-                                entry1.3.clone(),
-                                entry1.4.clone(),
-                                entry2.1.clone(),
-                                entry2.2.clone(),
-                                entry2.3.clone(),
-                                entry2.4.clone(),
-                            ))
-                            .unwrap();
-                        }
-                    }
-                }
-            });
+        //                 if self.matching_naive(fx1, fx2) {
+        //                     let f2x = self.fx_calculator.calculate_fn(
+        //                         &[
+        //                             &entry1.1.bits,
+        //                             &entry1.2.bits,
+        //                             &entry1.3.bits,
+        //                             &entry1.4.bits,
+        //                             &entry2.1.bits,
+        //                             &entry2.2.bits,
+        //                             &entry2.3.bits,
+        //                             &entry2.4.bits,
+        //                         ],
+        //                         &fx1.bits,
+        //                     );
+        //                     s.send((
+        //                         BitsWrapper::new(f2x),
+        //                         entry1.1.clone(),
+        //                         entry1.2.clone(),
+        //                         entry1.3.clone(),
+        //                         entry1.4.clone(),
+        //                         entry2.1.clone(),
+        //                         entry2.2.clone(),
+        //                         entry2.3.clone(),
+        //                         entry2.4.clone(),
+        //                     ))
+        //                     .unwrap();
+        //                 }
+        //             }
+        //         }
+        //     });
 
-        self.table4 = receiver.iter().collect();
-        self.table4.sort_by(|a, b| a.0.value.cmp(&b.0.value));
+        // self.table4 = receiver.iter().collect();
+        // self.table4.sort_by(|a, b| a.0.value.cmp(&b.0.value));
 
-        println!(
-            "Table 4 len: {} ({:.2}%)",
-            self.table4.len(),
-            self.table4.len() as f64 / table_size as f64 * 100.0
-        );
+        // println!(
+        //     "Table 4 len: {} ({:.2}%)",
+        //     self.table4.len(),
+        //     self.table4.len() as f64 / table_size as f64 * 100.0
+        // );
 
-        println!("\nFinal tables:");
-        println!(
-            "Table 2 len: {} ({:.2}%)",
-            self.table2.len(),
-            self.table2.len() as f64 / table_size as f64 * 100.0
-        );
-        println!(
-            "Table 3 len: {} ({:.2}%)",
-            self.table3.len(),
-            self.table3.len() as f64 / table_size as f64 * 100.0
-        );
-        println!(
-            "Table 4 len: {} ({:.2}%)",
-            self.table4.len(),
-            self.table4.len() as f64 / table_size as f64 * 100.0
-        );
+        // println!("\nFinal tables:");
+        // println!(
+        //     "Table 2 len: {} ({:.2}%)",
+        //     self.table2.len(),
+        //     self.table2.len() as f64 / table_size as f64 * 100.0
+        // );
+        // println!(
+        //     "Table 3 len: {} ({:.2}%)",
+        //     self.table3.len(),
+        //     self.table3.len() as f64 / table_size as f64 * 100.0
+        // );
+        // println!(
+        //     "Table 4 len: {} ({:.2}%)",
+        //     self.table4.len(),
+        //     self.table4.len() as f64 / table_size as f64 * 100.0
+        // );
         // println!("{:?}\n", self.table1);
         // println!("{:?}\n", self.table2);
         // println!("{:?}\n", self.table3);
