@@ -1,4 +1,5 @@
 use crossbeam::channel::bounded;
+use log::{error, info};
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
@@ -102,18 +103,18 @@ impl PoSpace {
         // Clear data folder
         match remove_dir_all("data") {
             Ok(_) => {
-                println!("Cleaning data folder");
+                info!("Cleaning data folder");
             }
             Err(e) => {
-                println!("Cannot clean data folder: {}", e);
+                error!("Cannot clean data folder: {}", e);
             }
         }
         create_dir_all("data").ok();
-        println!("Data dir cleaned");
+        info!("Data dir cleaned");
 
         let table_size = 2u64.pow(self.k as u32);
 
-        println!("Calculating table 1 ...");
+        info!("Calculating table 1 ...");
 
         rayon::scope(|s| {
             let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
@@ -126,7 +127,7 @@ impl PoSpace {
                         let fx = self.f1_calculator.calculate_f1(&x_wrapped);
                         s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
                     });
-                println!("Calculating finished");
+                info!("Calculating finished");
             });
 
             let mut buffer = Vec::new();
@@ -139,7 +140,7 @@ impl PoSpace {
                 });
 
                 if buffer.len() % (1024 * 1024) == 0 {
-                    println!(
+                    info!(
                         "Progess: {:.3}%",
                         (buffer.len() + (counter - 1) * ENTRIES_PER_CHUNK) as f64
                             / (table_size as usize) as f64
@@ -148,8 +149,7 @@ impl PoSpace {
                 }
 
                 if buffer.len() == ENTRIES_PER_CHUNK {
-                    println!("Wrinting raw data to disk ...");
-                    // Write to disk
+                    info!("Wrinting raw data to disk ...");
                     store_table_part(
                         &buffer,
                         &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
@@ -167,12 +167,12 @@ impl PoSpace {
             }
         });
 
-        println!("Table 1 raw data written");
-        println!("Starting to sort table 1 on disk ...");
+        info!("Table 1 raw data written");
+        info!("Starting to sort table 1 on disk ...");
 
         sort_table_on_disk::<Table1Entry>(1, "data", "data/table1_raw_*", ENTRIES_PER_CHUNK);
 
-        println!("Table 1 sorted on disk");
+        info!("Table 1 sorted on disk");
 
         // Table 2
         // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);

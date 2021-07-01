@@ -1,4 +1,5 @@
 use glob::glob;
+use log::info;
 use std::{
     collections::VecDeque,
     fs::File,
@@ -126,7 +127,7 @@ pub fn sort_table_on_disk<T>(
     // K-Way Merge sort
 
     if chunks_count > 1 {
-        println!("K-Way merging for table 1 ...");
+        info!("K-Way merging for table 1 ...");
 
         let mut state = KWayMerge::new(
             &parts,
@@ -137,9 +138,9 @@ pub fn sort_table_on_disk<T>(
 
         while state.run_iteration() != KWayMergeState::Done {}
 
-        println!("K-Way merge done");
+        info!("K-Way merge done");
 
-        println!("{} final entries written", state.item_count);
+        info!("{} final entries written", state.item_count);
     } else {
         // TODO rename file to final
     }
