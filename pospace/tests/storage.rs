@@ -1,19 +1,14 @@
 use rand::thread_rng;
 use rand::Rng;
 use spaceframe_pospace::storage::sort_table_on_disk;
-use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
 use spaceframe_pospace::storage::TABLE1_SERIALIZED_ENTRY_SIZE;
 use spaceframe_pospace::storage::{store_table_part, Table1Entry};
-use std::fs::create_dir_all;
-use std::fs::remove_dir_all;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 fn setup_storage() {
     let mut rng = thread_rng();
-    remove_dir_all("test_data").ok();
-    create_dir_all("test_data").ok();
     for i in 0..3 {
         let data = (0..100)
             .map(|x| {
@@ -54,7 +49,7 @@ fn test_kway_merge_table1() {
 #[test]
 fn test_kway_merge_table1_big_chunk() {
     setup_storage();
-    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_*", ENTRIES_PER_CHUNK);
+    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_*", 100);
     let mut file = File::open("test_data/table1_final").unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();

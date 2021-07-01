@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
     path::Path,
-    sync::mpsc::channel,
+    sync::mpsc::{channel, sync_channel},
 };
 
 use crate::{
@@ -109,48 +109,70 @@ impl PoSpace {
             }
         }
         create_dir_all("data").ok();
+        println!("Data dir cleaned");
 
         let table_size = 2u64.pow(self.k as u32);
 
-        let (sender, receiver) = channel();
-
-        (0..table_size)
-            .into_par_iter()
-            .for_each_with(sender, |s, x| {
-                let x_wrapped = BitsWrapper::from(x, self.k);
-                let fx = self.f1_calculator.calculate_f1(&x_wrapped);
-                s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
-            });
-
         println!("Calculating table 1 ...");
-        let mut buffer = Vec::new();
-        let mut counter = 1;
-        while let Ok(data) = receiver.recv() {
-            buffer.push(Table1Entry {
-                x: data.1.value,
-                y: data.0.value,
+
+        rayon::scope(|s| {
+            let (sender, receiver) = sync_channel(ENTRIES_PER_CHUNK);
+
+            s.spawn(|_| {
+                (0..table_size)
+                    .into_par_iter()
+                    .for_each_with(sender, |s, x| {
+                        let x_wrapped = BitsWrapper::from(x, self.k);
+                        let fx = self.f1_calculator.calculate_f1(&x_wrapped);
+                        s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
+                    });
+                println!("Calculating finished");
             });
-            if buffer.len() == ENTRIES_PER_CHUNK {
-                // Write to disk
+
+            let mut buffer = Vec::new();
+            let mut counter = 1;
+
+            while let Ok(data) = receiver.recv() {
+                buffer.push(Table1Entry {
+                    x: data.1.value,
+                    y: data.0.value,
+                });
+
+                if buffer.len() % (1024 * 1024) == 0 {
+                    println!(
+                        "Progess: {:.3}%",
+                        (buffer.len() + (counter - 1) * ENTRIES_PER_CHUNK) as f64
+                            / (table_size as usize) as f64
+                            * 100 as f64
+                    );
+                }
+
+                if buffer.len() == ENTRIES_PER_CHUNK {
+                    println!("Wrinting raw data to disk ...");
+                    // Write to disk
+                    store_table_part(
+                        &buffer,
+                        &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
+                    );
+                    counter += 1;
+                    buffer.clear();
+                }
+            }
+
+            if buffer.len() > 0 {
                 store_table_part(
                     &buffer,
                     &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
                 );
-                counter += 1;
-                buffer.clear();
             }
-        }
+        });
 
-        if buffer.len() > 0 {
-            store_table_part(
-                &buffer,
-                &Path::new("data").join(format!("table{}_raw_{}", 1, counter)),
-            );
-        }
+        println!("Table 1 raw data written");
+        println!("Starting to sort table 1 on disk ...");
 
         sort_table_on_disk::<Table1Entry>(1, "data", "data/table1_raw_*", ENTRIES_PER_CHUNK);
 
-        println!("Table 1 len: {}", self.table1.len());
+        println!("Table 1 sorted on disk");
 
         // Table 2
         let (sender, receiver) = channel();

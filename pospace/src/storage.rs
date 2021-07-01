@@ -10,8 +10,8 @@ use std::{
 use crate::bits::BitsWrapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-/// 1 MB per chunk
-pub const ENTRIES_PER_CHUNK: usize = 65_536;
+/// 1 GB per chunk
+pub const ENTRIES_PER_CHUNK: usize = 65_536 * 512;
 
 lazy_static! {
     pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
@@ -262,7 +262,7 @@ impl KWayMerge {
 #[derive(Debug)]
 struct MergeChunk {
     id: u32,
-    file: File,
+    file: File, // TODO don't keep the file open to prevent "Too many open files" error
     content: VecDeque<Table1Entry>,
     total_size: usize,
     chunk_size: usize,
@@ -300,4 +300,26 @@ impl MergeChunk {
 #[derive(Debug)]
 enum ChunkError {
     EmptyChunksWhileFetchingMininum,
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_store_table_part_table1() {
+        let test_data = vec![Table1Entry { x: 2, y: 3 }, Table1Entry { x: 6, y: 1 }];
+        let path = Path::new("test_data").join("store_table_1");
+        store_table_part(&test_data, &path);
+
+        let mut verify_buffer = Vec::new();
+        File::open(&path)
+            .unwrap()
+            .read_to_end(&mut verify_buffer)
+            .unwrap();
+        let verify_data: Vec<Table1Entry> = deserialize(&verify_buffer);
+
+        assert_eq!(test_data, verify_data)
+    }
 }
