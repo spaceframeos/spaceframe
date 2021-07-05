@@ -13,6 +13,18 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 /// 1 GB per chunk
 pub const ENTRIES_PER_CHUNK: usize = 65_536 * 1024;
 
+macro_rules! table_raw_filename_format {
+    () => {
+        "table{}_raw_{}"
+    };
+}
+
+macro_rules! table_sorted_filename_format {
+    () => {
+        "table{}_sorted_{}"
+    };
+}
+
 lazy_static! {
     pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
         x: u64::MAX,
@@ -54,6 +66,13 @@ where
     new_file.write_all(&bin_data).unwrap();
 }
 
+pub fn store_table1_part(buffer: &[Table1Entry], path: &Path, index: usize) {
+    store_table_part(
+        buffer,
+        &path.join(format!(table_raw_filename_format!(), 1, index)),
+    );
+}
+
 pub fn serialize<T>(buffer: &[T]) -> Vec<u8>
 where
     T: Serialize,
@@ -86,10 +105,10 @@ where
 
     entries.sort();
 
-    let out_path = path
-        .parent()
-        .unwrap()
-        .join(format!("table{}_sorted_{}", table_index, part_index));
+    let out_path = path.parent().unwrap().join(format!(
+        table_sorted_filename_format!(),
+        table_index, part_index
+    ));
 
     store_table_part(&entries, &out_path);
     out_path
