@@ -21,6 +21,7 @@ log = "0.4.14"
 [dev-dependencies]
 criterion = { version = "0.3", features = ["html_reports"] }
 rand = "0.8.3"
+tempdir = "0.3.7"
 
 [[bench]]
 name = "my_benchmark"

@@ -170,7 +170,7 @@ impl PoSpace {
         info!("Table 1 raw data written");
         info!("Starting to sort table 1 on disk ...");
 
-        sort_table_on_disk::<Table1Entry>(1, "data", "data/table1_raw_*", ENTRIES_PER_CHUNK);
+        sort_table_on_disk::<Table1Entry>(1, Path::new("data"), ENTRIES_PER_CHUNK);
 
         info!("Table 1 sorted on disk");
 

@@ -1,13 +1,15 @@
 use rand::thread_rng;
 use rand::Rng;
 use spaceframe_pospace::storage::sort_table_on_disk;
+use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
 use spaceframe_pospace::storage::TABLE1_SERIALIZED_ENTRY_SIZE;
 use spaceframe_pospace::storage::{store_table_part, Table1Entry};
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use tempdir::TempDir;
 
-fn setup_storage() {
+fn setup_storage() -> TempDir {
+    let dir = TempDir::new("spaceframe_test_data").unwrap();
     let mut rng = thread_rng();
     for i in 0..3 {
         let data = (0..100)
@@ -18,18 +20,16 @@ fn setup_storage() {
                 };
             })
             .collect::<Vec<Table1Entry>>();
-        store_table_part(
-            &data,
-            &Path::new("test_data").join(format!("table1_raw_{}", i)),
-        );
+        store_table_part(&data, &dir.path().join(format!("table1_raw_{}", i)));
     }
+    dir
 }
 
 #[test]
 fn test_kway_merge_table1() {
-    setup_storage();
-    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_raw_*", 10);
-    let mut file = File::open("test_data/table1_final").unwrap();
+    let dir = setup_storage();
+    sort_table_on_disk::<Table1Entry>(1, dir.path(), 10);
+    let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
     let entries = buffer
@@ -48,9 +48,9 @@ fn test_kway_merge_table1() {
 
 #[test]
 fn test_kway_merge_table1_big_chunk() {
-    setup_storage();
-    sort_table_on_disk::<Table1Entry>(1, "test_data", "test_data/table1_*", 100);
-    let mut file = File::open("test_data/table1_final").unwrap();
+    let dir = setup_storage();
+    sort_table_on_disk::<Table1Entry>(1, dir.path(), ENTRIES_PER_CHUNK);
+    let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
     let entries = buffer

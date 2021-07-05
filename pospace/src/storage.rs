@@ -1,8 +1,7 @@
-use glob::glob;
 use log::info;
 use std::{
     collections::VecDeque,
-    fs::File,
+    fs::{read_dir, File},
     io::{Read, Write},
     iter::FromIterator,
     path::{Path, PathBuf},
@@ -76,36 +75,28 @@ where
         .collect::<O>()
 }
 
-pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize) -> Option<PathBuf>
+pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize) -> PathBuf
 where
     T: Serialize + DeserializeOwned + Ord,
 {
-    if path.is_file() {
-        let mut buffer = Vec::new();
-        let mut file = File::open(&path).unwrap();
-        file.read_to_end(&mut buffer).unwrap();
-        let mut entries = deserialize::<Vec<T>, T>(&buffer);
+    let mut buffer = Vec::new();
+    let mut file = File::open(&path).unwrap();
+    file.read_to_end(&mut buffer).unwrap();
+    let mut entries = deserialize::<Vec<T>, T>(&buffer);
 
-        entries.sort();
+    entries.sort();
 
-        let out_path = path
-            .parent()
-            .unwrap()
-            .join(format!("table{}_sorted_{}", table_index, part_index));
+    let out_path = path
+        .parent()
+        .unwrap()
+        .join(format!("table{}_sorted_{}", table_index, part_index));
 
-        store_table_part(&entries, &out_path);
-
-        return Some(out_path);
-    }
-    return None;
+    store_table_part(&entries, &out_path);
+    out_path
 }
 
-pub fn sort_table_on_disk<T>(
-    table_index: usize,
-    tables_folder: &str,
-    glob_pattern: &str,
-    entries_per_chunk: usize,
-) where
+pub fn sort_table_on_disk<T>(table_index: usize, path: &Path, entries_per_chunk: usize)
+where
     T: Serialize + DeserializeOwned + Ord,
 {
     // Sort each bucket
@@ -113,15 +104,24 @@ pub fn sort_table_on_disk<T>(
     let mut parts = Vec::new();
 
     // Sort individual table parts
-    for (index, entry) in glob(glob_pattern)
+    for (index, entry) in read_dir(path)
         .unwrap()
         .filter_map(Result::ok)
+        .map(|x| x.path())
         .enumerate()
     {
-        sort_table_part::<T>(&entry, table_index, index + 1).map(|path| {
+        if entry.is_file()
+            && entry
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(format!("table{}_raw_", table_index).as_str())
+        {
+            let part_path = sort_table_part::<T>(&entry, table_index, index + 1);
+            parts.push(part_path);
             chunks_count += 1;
-            parts.push(path);
-        });
+        }
     }
 
     // K-Way Merge sort
@@ -133,7 +133,7 @@ pub fn sort_table_on_disk<T>(
             &parts,
             *TABLE1_SERIALIZED_ENTRY_SIZE,
             entries_per_chunk,
-            tables_folder,
+            path,
         );
 
         while state.run_iteration() != KWayMergeState::Done {}
@@ -155,7 +155,7 @@ enum KWayMergeState {
 #[derive(Debug)]
 struct KWayMerge {
     entries_per_chunk: usize,
-    output_folder: String,
+    output_folder: PathBuf,
     chunks: Vec<MergeChunk>,
     output: Vec<Table1Entry>,
     iter_count: usize,
@@ -168,7 +168,7 @@ impl KWayMerge {
         paths: &[PathBuf],
         entry_size: usize,
         entries_per_chunk: usize,
-        output_folder: &str,
+        output_folder: &Path,
     ) -> Self {
         let chunk_size = entries_per_chunk / (paths.len() - 1) * entry_size;
         let mut state = Self {
@@ -177,7 +177,7 @@ impl KWayMerge {
             output: Vec::new(),
             iter_count: 0,
             item_count: 0,
-            output_folder: String::from(output_folder),
+            output_folder: output_folder.to_owned(),
             output_file: File::create(Path::new(output_folder).join("table1_final")).unwrap(),
         };
 
@@ -306,12 +306,15 @@ enum ChunkError {
 #[cfg(test)]
 mod tests {
 
+    use tempdir::TempDir;
+
     use super::*;
 
     #[test]
     fn test_store_table_part_table1() {
+        let dir = TempDir::new("spaceframe_test_data").unwrap();
         let test_data = vec![Table1Entry { x: 2, y: 3 }, Table1Entry { x: 6, y: 1 }];
-        let path = Path::new("test_data").join("store_table_1");
+        let path = dir.path().join("store_table_1");
         store_table_part(&test_data, &path);
 
         let mut verify_buffer = Vec::new();
@@ -321,6 +324,6 @@ mod tests {
             .unwrap();
         let verify_data: Vec<Table1Entry> = deserialize(&verify_buffer);
 
-        assert_eq!(test_data, verify_data)
+        assert_eq!(test_data, verify_data);
     }
 }

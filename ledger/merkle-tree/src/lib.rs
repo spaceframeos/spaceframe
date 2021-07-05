@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 use hex::encode;
 
+pub mod verification;
+
 pub type Hash = Vec<u8>;
 
 pub struct MerkleTree {
@@ -35,12 +37,12 @@ impl MerkleTree {
         self.tree.last().map(|x| x.as_slice())
     }
 
-    pub fn verify(&self, _data: &[u8]) -> bool {
-        todo!()
+    fn get_leaves(&self) -> Vec<Hash> {
+        self.tree[..self.leaf_count].to_vec()
     }
 
     fn rebuild_tree(&mut self) {
-        let mut leaves = self.tree[..self.leaf_count].to_vec();
+        let mut leaves = self.get_leaves();
         self.tree = leaves.clone();
 
         while leaves.len() > 1 {
@@ -194,17 +196,5 @@ mod tests {
                 .unwrap(),
             merkle_tree.root().unwrap()
         );
-    }
-
-    #[test]
-    fn test_check_hash() {
-        let mut merkle_tree = MerkleTree::new();
-
-        merkle_tree.add(b"data1");
-        merkle_tree.add(b"data2");
-        merkle_tree.add(b"data3");
-        merkle_tree.add(b"data4");
-
-        assert!(merkle_tree.verify(b"data1"));
     }
 }
