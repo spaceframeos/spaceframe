@@ -8,3 +8,9 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
+blake3 = "0.3.8"
+log = "0.4.14"
+simplelog = "0.10.0"
+hex = "0.4.3"
+
+[dev-dependencies]
