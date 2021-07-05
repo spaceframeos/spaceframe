@@ -1,9 +1,16 @@
 [workspace]
 members = [
     "consensus",
+    "crypto",
+    "config",
     "pospace",
     "node",
-    "bitvec",
+    "json-rpc",
+    "storage",
+    "network",
+    "mempool",
+    "ledger",
+    "ledger/merkle-tree",
 ]
 
 [profile.release]
