@@ -17,6 +17,13 @@ impl MerkleTree {
         }
     }
 
+    pub fn with_transactions(mut self, transactions: &[&[u8]]) -> Self {
+        self.tree = transactions.iter().map(|x| Self::hash(x)).collect();
+        self.leaf_count = transactions.len();
+        self.rebuild_tree();
+        self
+    }
+
     pub fn add(&mut self, data: &[u8]) {
         let hash = Self::hash(data);
         self.tree.insert(self.leaf_count, hash);
@@ -89,6 +96,18 @@ mod tests {
         let merkle = MerkleTree::new();
         assert_eq!(0, merkle.leaf_count);
         assert_eq!(0, merkle.tree.len());
+    }
+
+    #[test]
+    fn test_merkle_with_transactions() {
+        let merkle = MerkleTree::new().with_transactions(&[b"data1", b"data2", b"data3", b"data4"]);
+
+        assert_eq!(4, merkle.leaf_count);
+        assert_eq!(7, merkle.tree.len());
+        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
+        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
+        assert_eq!(MerkleTree::hash(b"data3").to_vec(), merkle.tree[2]);
+        assert_eq!(MerkleTree::hash(b"data4").to_vec(), merkle.tree[3]);
     }
 
     #[test]
