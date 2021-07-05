@@ -36,8 +36,6 @@ impl MerkleTree {
         let mut leaves = self.tree[..self.leaf_count].to_vec();
         self.tree = leaves.clone();
 
-        println!("Leaves count: {}", leaves.len());
-
         while leaves.len() > 1 {
             let parents = leaves
                 .chunks(2)
@@ -49,10 +47,6 @@ impl MerkleTree {
                 })
                 .collect::<Vec<Hash>>();
             self.tree.extend(parents.clone());
-            println!(
-                "Nodes: {:?}",
-                parents.iter().map(|x| encode(x)).collect::<Vec<String>>()
-            );
             leaves = parents;
         }
 
@@ -66,14 +60,18 @@ impl MerkleTree {
 
 impl Display for MerkleTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut counter = 0;
-        let mut line_index = 0;
-        self.tree.iter().rev().enumerate().for_each(|(i, node)| {
-            write!(f, "O  ").unwrap();
+        let mut counter = self.leaf_count - 1;
+        let mut leaf_count = self.leaf_count;
+        self.tree.iter().for_each(|node| {
+            let mut display = encode(node);
+            display.truncate(8);
+
+            write!(f, "{}, ", display).unwrap();
+
             if counter == 0 {
                 write!(f, "\n").unwrap();
-                line_index += 1;
-                counter = 2u32.pow(line_index) - 1;
+                leaf_count = (leaf_count as f64 / 2f64).ceil() as usize;
+                counter = leaf_count - 1;
             } else {
                 counter -= 1;
             }
