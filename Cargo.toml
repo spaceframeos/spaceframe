@@ -5,7 +5,7 @@ members = [
     "config",
     "pospace",
     "node",
-    "json-rpc",
+    "grpc",
     "storage",
     "network",
     "mempool",

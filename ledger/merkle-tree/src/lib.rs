@@ -28,7 +28,7 @@ impl MerkleTree {
         self.tree.last().map(|x| x.as_slice())
     }
 
-    pub fn verify(&self, data: &[u8]) -> bool {
+    pub fn verify(&self, _data: &[u8]) -> bool {
         todo!()
     }
 
