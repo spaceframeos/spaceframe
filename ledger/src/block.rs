@@ -15,12 +15,12 @@ pub struct RawBlock {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Block {
-    height: u64,
-    timestamp: i64,
-    hash: Vec<u8>,
-    previous_hash: Option<Vec<u8>>,
-    merkle_root: Option<Vec<u8>>,
-    transactions: Vec<Transaction>,
+    pub height: u64,
+    pub timestamp: i64,
+    pub hash: Vec<u8>,
+    pub previous_hash: Option<Vec<u8>>,
+    pub merkle_root: Option<Vec<u8>>,
+    pub transactions: Vec<Transaction>,
 }
 
 impl Block {
