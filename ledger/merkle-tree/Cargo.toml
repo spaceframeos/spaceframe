@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 hex = "0.4.3"
 blake3 = "0.3.8"
+spaceframe-crypto = { path = "../../crypto" }

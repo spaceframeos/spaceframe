@@ -1,10 +1,5 @@
+use spaceframe_crypto::Hash;
 use std::fmt::Display;
-
-use hex::encode;
-
-pub mod verification;
-
-pub type Hash = Vec<u8>;
 
 pub struct MerkleTree {
     tree: Vec<Hash>,
@@ -20,50 +15,36 @@ impl MerkleTree {
     }
 
     pub fn with_transactions(mut self, transactions: &[&[u8]]) -> Self {
-        self.tree = transactions.iter().map(|x| Self::hash(x)).collect();
+        self.tree = transactions.iter().map(Hash::from).collect();
         self.leaf_count = transactions.len();
         self.rebuild_tree();
         self
     }
 
     pub fn add(&mut self, data: &[u8]) {
-        let hash = Self::hash(data);
+        let hash = Hash::from(data);
         self.tree.insert(self.leaf_count, hash);
         self.leaf_count += 1;
         self.rebuild_tree();
     }
 
     pub fn root(&self) -> Option<&[u8]> {
-        self.tree.last().map(|x| x.as_slice())
+        self.tree.last().map(|x| x.bytes())
     }
 
-    fn get_leaves(&self) -> Vec<Hash> {
-        self.tree[..self.leaf_count].to_vec()
+    fn get_leaves(&self) -> &[Hash] {
+        self.tree[..self.leaf_count].as_ref()
     }
 
     fn rebuild_tree(&mut self) {
-        let mut leaves = self.get_leaves();
+        let mut leaves = self.get_leaves().to_vec();
         self.tree = leaves.clone();
 
         while leaves.len() > 1 {
-            let parents = leaves
-                .chunks(2)
-                .map(|data| {
-                    let mut hasher = blake3::Hasher::new();
-                    hasher.update(&data[0]);
-                    hasher.update(&data.get(1).unwrap_or(&data[0]));
-                    hasher.finalize().as_bytes().to_vec()
-                })
-                .collect::<Vec<Hash>>();
+            let parents = leaves.chunks(2).map(Hash::concat).collect::<Vec<Hash>>();
             self.tree.extend(parents.clone());
             leaves = parents;
         }
-
-        println!("Tree rebuilt: \n{}", self);
-    }
-
-    fn hash(data: &[u8]) -> Hash {
-        blake3::hash(data).as_bytes().to_vec()
     }
 }
 
@@ -72,8 +53,8 @@ impl Display for MerkleTree {
         let mut counter = self.leaf_count - 1;
         let mut leaf_count = self.leaf_count;
         self.tree.iter().for_each(|node| {
-            let mut display = encode(node);
-            display.truncate(8);
+            let mut display = node.hex();
+            display.truncate(6);
 
             write!(f, "{}, ", display).unwrap();
 
@@ -106,10 +87,16 @@ mod tests {
 
         assert_eq!(4, merkle.leaf_count);
         assert_eq!(7, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
-        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
-        assert_eq!(MerkleTree::hash(b"data3").to_vec(), merkle.tree[2]);
-        assert_eq!(MerkleTree::hash(b"data4").to_vec(), merkle.tree[3]);
+        assert_eq!(Hash::from(b"data1"), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data2"), merkle.tree[1]);
+        assert_eq!(Hash::from(b"data3"), merkle.tree[2]);
+        assert_eq!(Hash::from(b"data4"), merkle.tree[3]);
+
+        assert_eq!(
+            hex::decode("a6b764089d73a35323f5bf570e3bc8a803c78953cafe9ff4297233b2c9bc24ba")
+                .unwrap(),
+            merkle.root().unwrap()
+        );
     }
 
     #[test]
@@ -119,7 +106,7 @@ mod tests {
 
         assert_eq!(1, merkle.leaf_count);
         assert_eq!(1, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data").to_vec(), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data"), merkle.tree[0]);
     }
 
     #[test]
@@ -130,8 +117,8 @@ mod tests {
 
         assert_eq!(2, merkle.leaf_count);
         assert_eq!(3, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
-        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
+        assert_eq!(Hash::from(b"data1"), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data2"), merkle.tree[1]);
     }
 
     #[test]
@@ -143,9 +130,9 @@ mod tests {
 
         assert_eq!(3, merkle.leaf_count);
         assert_eq!(6, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
-        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
-        assert_eq!(MerkleTree::hash(b"data3").to_vec(), merkle.tree[2]);
+        assert_eq!(Hash::from(b"data1"), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data2"), merkle.tree[1]);
+        assert_eq!(Hash::from(b"data3"), merkle.tree[2]);
     }
 
     #[test]
@@ -158,10 +145,10 @@ mod tests {
 
         assert_eq!(4, merkle.leaf_count);
         assert_eq!(7, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
-        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
-        assert_eq!(MerkleTree::hash(b"data3").to_vec(), merkle.tree[2]);
-        assert_eq!(MerkleTree::hash(b"data4").to_vec(), merkle.tree[3]);
+        assert_eq!(Hash::from(b"data1"), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data2"), merkle.tree[1]);
+        assert_eq!(Hash::from(b"data3"), merkle.tree[2]);
+        assert_eq!(Hash::from(b"data4"), merkle.tree[3]);
     }
 
     #[test]
@@ -175,11 +162,11 @@ mod tests {
 
         assert_eq!(5, merkle.leaf_count);
         assert_eq!(11, merkle.tree.len());
-        assert_eq!(MerkleTree::hash(b"data1").to_vec(), merkle.tree[0]);
-        assert_eq!(MerkleTree::hash(b"data2").to_vec(), merkle.tree[1]);
-        assert_eq!(MerkleTree::hash(b"data3").to_vec(), merkle.tree[2]);
-        assert_eq!(MerkleTree::hash(b"data4").to_vec(), merkle.tree[3]);
-        assert_eq!(MerkleTree::hash(b"data5").to_vec(), merkle.tree[4]);
+        assert_eq!(Hash::from(b"data1"), merkle.tree[0]);
+        assert_eq!(Hash::from(b"data2"), merkle.tree[1]);
+        assert_eq!(Hash::from(b"data3"), merkle.tree[2]);
+        assert_eq!(Hash::from(b"data4"), merkle.tree[3]);
+        assert_eq!(Hash::from(b"data5"), merkle.tree[4]);
     }
 
     #[test]
