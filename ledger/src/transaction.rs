@@ -1,3 +1,5 @@
+use crate::errors::LedgerError;
+use crate::errors::Result;
 use serde::{Deserialize, Serialize};
 use spaceframe_crypto::hash::Hash;
 
@@ -18,7 +20,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn verify(&self) -> bool {
+    pub fn verify(&self) -> Result<()> {
         // Recalculate tx hash
         let bytes = bincode::serialize(&RawTransaction {
             timestamp: self.timestamp,
@@ -30,11 +32,11 @@ impl Transaction {
 
         // Verify hash
         if calculated_hash.to_vec() != self.hash {
-            return false;
+            return Err(LedgerError::TxInvalidHash);
         }
 
-        // Verify signature
-        return true;
+        // TODO Verify signature
+        return Err(LedgerError::TxInvalidSignature);
     }
 }
 
