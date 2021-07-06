@@ -8,3 +8,7 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3.3"
+chrono = "0.4.19"
+spaceframe-crypto = { path="../crypto" }
+spaceframe-merkle-tree = { path = "./merkle-tree" }
