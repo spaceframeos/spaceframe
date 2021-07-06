@@ -4,10 +4,4 @@
 </h1>
 
 <h3 align="center">A Swiss ecological and confidential blockchain</h3>
-<h4 align="center">Rust reference implementation</h4>
-
----
-
-## What is Spaceframe
-
-*TODO*
+<h4 align="center"><i>:warning: For education purposes only. This is by no means a complete implementation and it is by no means secure!</i></h4>
