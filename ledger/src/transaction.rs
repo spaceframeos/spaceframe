@@ -51,3 +51,17 @@ impl Transaction {
             .or(Err(LedgerError::TxInvalidSignature))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_txpayload_finalize() {
+        // let payload = TransactionPayload {
+        //     timestamp: 1234,
+        //     amount: 12.4,
+        //     to_address:
+        // }
+    }
+}

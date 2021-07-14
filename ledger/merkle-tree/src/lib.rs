@@ -86,7 +86,12 @@ mod tests {
 
     #[test]
     fn test_merkle_with_transactions() {
-        let merkle = MerkleTree::new().with_transactions(&[b"data1", b"data2", b"data3", b"data4"]);
+        let merkle = MerkleTree::new().with_transactions(&[
+            b"data1".to_vec(),
+            b"data2".to_vec(),
+            b"data3".to_vec(),
+            b"data4".to_vec(),
+        ]);
 
         assert_eq!(4, merkle.leaf_count);
         assert_eq!(7, merkle.tree.len());
