@@ -1,47 +1,53 @@
+use crate::account::Address;
 use crate::errors::LedgerError;
 use crate::errors::Result;
+use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature};
 use serde::{Deserialize, Serialize};
-use spaceframe_crypto::hash::Hash;
+
+const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
 #[derive(Serialize, Deserialize, Debug)]
-struct RawTransaction {
+pub struct TransactionPayload {
     timestamp: i64,
-    inputs: Vec<TransactionIO>,
-    outputs: Vec<TransactionIO>,
+    to_address: Address,
+    amount: f64,
+}
+
+impl TransactionPayload {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+
+    pub fn prehashed(&self) -> Sha512 {
+        let mut hasher = Sha512::new();
+        hasher.update(self.as_bytes());
+        hasher
+    }
+
+    pub fn finalize(self, keypair: &Keypair) -> Transaction {
+        let signature = keypair
+            .sign_prehashed(self.prehashed(), Some(CONTEXT))
+            .unwrap();
+
+        Transaction {
+            signature,
+            from_key: keypair.public,
+            payload: self,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Transaction {
-    pub hash: Vec<u8>,
-    pub signature: Vec<u8>,
-    pub timestamp: i64,
-    pub inputs: Vec<TransactionIO>,
-    pub outputs: Vec<TransactionIO>,
+    pub from_key: PublicKey,
+    pub signature: Signature,
+    pub payload: TransactionPayload,
 }
 
 impl Transaction {
     pub fn verify(&self) -> Result<()> {
-        // Recalculate tx hash
-        let bytes = bincode::serialize(&RawTransaction {
-            timestamp: self.timestamp,
-            inputs: self.inputs.clone(),
-            outputs: self.outputs.clone(),
-        })
-        .unwrap();
-        let calculated_hash = Hash::hash(bytes);
-
-        // Verify hash
-        if calculated_hash.to_vec() != self.hash {
-            return Err(LedgerError::TxInvalidHash);
-        }
-
-        // TODO Verify signature
-        return Err(LedgerError::TxInvalidSignature);
+        self.from_key
+            .verify_prehashed(self.payload.prehashed(), Some(CONTEXT), &self.signature)
+            .or(Err(LedgerError::TxInvalidSignature))
     }
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TransactionIO {
-    address: Vec<u8>,
-    amount: f64,
 }

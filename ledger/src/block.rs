@@ -43,7 +43,7 @@ impl Block {
 
         for transaction in &raw_block.transactions {
             transaction.verify()?;
-            tx_hashes.push(transaction.hash.clone());
+            tx_hashes.push(transaction.payload.as_bytes());
         }
 
         let merkle_tree = MerkleTree::new()

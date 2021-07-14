@@ -1,3 +1,4 @@
+use blake3::Hasher;
 use hex::encode;
 use std::fmt::{Display, Formatter};
 
@@ -35,6 +36,12 @@ impl Hash {
         Hash {
             hash: [0; Hash::LENGTH],
         }
+    }
+
+    pub fn digest<T: AsRef<[u8]>>(value: T) -> Hasher {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(value.as_ref());
+        hasher
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
