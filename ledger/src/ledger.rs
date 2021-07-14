@@ -29,7 +29,7 @@ impl Ledger {
         todo!()
     }
 
-    fn get_current_height(&self) -> u64 {
-        self.blockchain.last().unwrap().height
+    fn get_current_height(&self) -> usize {
+        self.blockchain.len()
     }
 }

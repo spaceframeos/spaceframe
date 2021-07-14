@@ -8,7 +8,7 @@ use std::fmt::{Display, Formatter};
 
 const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransactionPayload {
     timestamp: i64,
     to_address: Address,
@@ -39,7 +39,7 @@ impl TransactionPayload {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transaction {
     pub from_key: PublicKey,
     pub signature: Signature,

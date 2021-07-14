@@ -9,6 +9,8 @@ pub enum LedgerError {
     TxInvalidSignature,
     TxSignatureError,
     TxSelfTransaction,
+    BlockEmptyMerkleRoot,
+    BlockInvalid,
 }
 
 impl Display for LedgerError {
@@ -18,6 +20,8 @@ impl Display for LedgerError {
             LedgerError::TxInvalidSignature => write!(f, "invalid transaction signature"),
             LedgerError::TxSignatureError => write!(f, "error while signing"),
             LedgerError::TxSelfTransaction => write!(f, "cannot make transaction to self address"),
+            LedgerError::BlockEmptyMerkleRoot => write!(f, "merkle root is empty"),
+            LedgerError::BlockInvalid => write!(f, "block is invalid"),
         }
     }
 }
