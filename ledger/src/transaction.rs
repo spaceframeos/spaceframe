@@ -47,6 +47,23 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub fn new(keypair: &Keypair, receiver_address: &Address, amount: f64) -> Result<Self> {
+        if Address::from(keypair.public) == *receiver_address {
+            return Err(LedgerError::TxSelfTransaction);
+        }
+
+        if amount <= 0.0 {
+            return Err(LedgerError::TxInvalidAmount);
+        }
+
+        let payload = TransactionPayload {
+            timestamp: Utc::now().timestamp(),
+            to_address: receiver_address.clone(),
+            amount,
+        };
+        payload.finalize(keypair)
+    }
+
     pub fn verify(&self) -> Result<()> {
         self.from_key
             .verify_prehashed(self.payload.prehashed(), Some(CONTEXT), &self.signature)
@@ -90,6 +107,31 @@ mod tests {
             keypair_1,
             keypair_2,
         )
+    }
+
+    #[test]
+    fn test_new_transaction() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0);
+        assert!(tx.is_ok());
+    }
+
+    #[test]
+    fn test_new_transaction_0_amount() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 0.0);
+        assert!(tx.is_err());
+    }
+
+    #[test]
+    fn test_new_transaction_self() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let tx = Transaction::new(&keypair, &Address::from(keypair.public), 12.0);
+        assert!(tx.is_err());
     }
 
     #[test]
