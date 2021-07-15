@@ -12,7 +12,8 @@ const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 pub struct TransactionPayload {
     timestamp: i64,
     to_address: Address,
-    amount: f64,
+    amount: u64,
+    fee: u64,
 }
 
 impl TransactionPayload {
@@ -32,27 +33,51 @@ impl TransactionPayload {
             .or(Err(LedgerError::TxSignatureError))?;
 
         Ok(Transaction {
-            signature,
-            from_key: keypair.public,
+            signature: Some(TransactionSignature {
+                pubkey: keypair.public,
+                signature,
+            }),
             payload: self,
         })
     }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+struct TransactionSignature {
+    pubkey: PublicKey,
+    signature: Signature,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transaction {
-    pub from_key: PublicKey,
-    pub signature: Signature,
+    signature: Option<TransactionSignature>,
     pub payload: TransactionPayload,
 }
 
 impl Transaction {
-    pub fn new(keypair: &Keypair, receiver_address: &Address, amount: f64) -> Result<Self> {
+    pub fn genesis(address: &Address, amount: u64) -> Self {
+        Transaction {
+            payload: TransactionPayload {
+                fee: 0,
+                amount,
+                to_address: address.clone(),
+                timestamp: Utc::now().timestamp(),
+            },
+            signature: None,
+        }
+    }
+
+    pub fn new(
+        keypair: &Keypair,
+        receiver_address: &Address,
+        amount: u64,
+        fee: u64,
+    ) -> Result<Self> {
         if Address::from(keypair.public) == *receiver_address {
             return Err(LedgerError::TxSelfTransaction);
         }
 
-        if amount <= 0.0 {
+        if amount == 0 {
             return Err(LedgerError::TxInvalidAmount);
         }
 
@@ -60,14 +85,19 @@ impl Transaction {
             timestamp: Utc::now().timestamp(),
             to_address: receiver_address.clone(),
             amount,
+            fee,
         };
         payload.finalize(keypair)
     }
 
     pub fn verify(&self) -> Result<()> {
-        self.from_key
-            .verify_prehashed(self.payload.prehashed(), Some(CONTEXT), &self.signature)
-            .or(Err(LedgerError::TxInvalidSignature))
+        self.signature
+            .as_ref()
+            .map_or(Err(LedgerError::TxNoSignature), |s| {
+                s.pubkey
+                    .verify_prehashed(self.payload.prehashed(), Some(CONTEXT), &s.signature)
+                    .or(Err(LedgerError::TxInvalidSignature))
+            })
     }
 }
 
@@ -76,7 +106,10 @@ impl Display for Transaction {
         write!(
             f,
             "[from: {}, to: {}, amount: {}, datetime: {}]",
-            Address::from(self.from_key),
+            self.signature
+                .as_ref()
+                .map_or(String::from("none"), |x| Address::from(x.pubkey)
+                    .to_string()),
             self.payload.to_address,
             self.payload.amount,
             DateTime::<Utc>::from_utc(
@@ -101,8 +134,9 @@ mod tests {
         (
             TransactionPayload {
                 timestamp: Utc::now().timestamp(),
-                amount: 12.4,
                 to_address: keypair_2.public.into(),
+                amount: 12,
+                fee: 1,
             },
             keypair_1,
             keypair_2,
@@ -114,7 +148,7 @@ mod tests {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
         let keypair_2: Keypair = Keypair::generate(&mut OsRng);
 
-        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0);
+        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2);
         assert!(tx.is_ok());
     }
 
@@ -123,15 +157,22 @@ mod tests {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
         let keypair_2: Keypair = Keypair::generate(&mut OsRng);
 
-        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 0.0);
+        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 0, 0);
         assert!(tx.is_err());
     }
 
     #[test]
     fn test_new_transaction_self() {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let tx = Transaction::new(&keypair, &Address::from(keypair.public), 12.0);
+        let tx = Transaction::new(&keypair, &Address::from(keypair.public), 12, 1);
         assert!(tx.is_err());
+    }
+
+    #[test]
+    fn test_verify_no_signature() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let tx = Transaction::genesis(&Address::from(keypair.public), 1234);
+        assert!(tx.verify().is_err());
     }
 
     #[test]
@@ -139,7 +180,6 @@ mod tests {
         let (payload, keypair_1, _) = setup();
 
         let tx = payload.finalize(&keypair_1).unwrap();
-        println!("Transaction: {}", tx);
         assert!(tx.verify().is_ok());
     }
 
@@ -148,8 +188,7 @@ mod tests {
         let (payload, keypair_1, _) = setup();
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
-        tx.payload.amount = 124.4;
-        println!("Transaction: {}", tx);
+        tx.payload.amount = 124;
         assert!(tx.verify().is_err());
     }
 
@@ -159,7 +198,6 @@ mod tests {
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
         tx.payload.timestamp += 1;
-        println!("Transaction: {}", tx);
         assert!(tx.verify().is_err());
     }
 
@@ -169,7 +207,6 @@ mod tests {
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
         tx.payload.to_address = Keypair::generate(&mut OsRng).public.into();
-        println!("Transaction: {}", tx);
         assert!(tx.verify().is_err());
     }
 
@@ -178,8 +215,7 @@ mod tests {
         let (payload, keypair_1, _) = setup();
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
-        tx.signature = Signature::new([0u8; 64]);
-        println!("Transaction: {}", tx);
+        tx.signature.as_mut().unwrap().signature = Signature::new([0u8; 64]);
         assert!(tx.verify().is_err());
     }
 
@@ -188,8 +224,7 @@ mod tests {
         let (payload, keypair_1, keypair_2) = setup();
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
-        tx.from_key = keypair_2.public;
-        println!("Transaction: {}", tx);
+        tx.signature.as_mut().unwrap().pubkey = keypair_2.public;
         assert!(tx.verify().is_err());
     }
 }

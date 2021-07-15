@@ -15,15 +15,18 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn genesis() -> Self {
+    pub fn genesis(initial_transactions: &[Transaction]) -> Self {
         let mut blk = Block {
             height: 1,
             hash: Hash::zero().to_vec(),
-            transactions: vec![],
+            transactions: initial_transactions.to_owned(),
             previous_block_hash: None,
             merkle_root: None,
         };
-        blk.hash = blk.calculate_hash().unwrap().block_hash.to_vec();
+        let hashes = blk.calculate_hash().unwrap();
+        blk.hash = hashes.block_hash.to_vec();
+        blk.merkle_root = hashes.merkle_root.map(|x| x.to_vec());
+
         blk
     }
 
@@ -32,6 +35,16 @@ impl Block {
         transactions: &[Transaction],
         previous_block_hash: &[u8],
     ) -> Result<Self> {
+        // Check height
+        if height < 2 {
+            return Err(LedgerError::BlockInvalidHeight);
+        }
+
+        // Check transactions
+        for tx in transactions {
+            tx.verify()?;
+        }
+
         let mut block = Block {
             height,
             transactions: transactions.to_vec(),
@@ -54,8 +67,9 @@ impl Block {
             return Err(LedgerError::BlockInvalid);
         }
 
-        // Check hash and transactions
         let hash = self.calculate_hash()?;
+
+        // Check hash
         if hash.block_hash.to_vec() != self.hash {
             return Err(LedgerError::BlockInvalid);
         }
@@ -67,7 +81,18 @@ impl Block {
             }
         }
 
+        // Verify transactions
+        if !self.is_genesis() {
+            for tx in &self.transactions {
+                tx.verify()?;
+            }
+        }
+
         Ok(())
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        self.previous_block_hash.is_none() && self.height == 1
     }
 
     fn calculate_hash(&self) -> Result<BlockHash> {
@@ -94,7 +119,6 @@ impl Block {
     fn calculate_merkle_root(transactions: &[Transaction]) -> Result<Hash> {
         let mut tx_bytes = Vec::new();
         for transaction in transactions {
-            transaction.verify()?;
             tx_bytes.push(transaction.payload.as_bytes());
         }
 
@@ -120,17 +144,50 @@ mod tests {
     use rand::rngs::OsRng;
 
     #[test]
-    fn test_new_genesis() {
-        let genesis = Block::genesis();
+    fn test_new_genesis_no_transaction() {
+        let initial_transactions = Vec::new();
+        let genesis = Block::genesis(&initial_transactions);
         assert!(genesis.merkle_root.is_none());
         assert!(genesis.previous_block_hash.is_none());
-        assert_eq!(0, genesis.transactions.len());
+        assert_eq!(initial_transactions.len(), genesis.transactions.len());
+    }
+
+    #[test]
+    fn test_new_genesis_with_transactions() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
+        let genesis = Block::genesis(&initial_transactions);
+        assert!(genesis.merkle_root.is_some());
+        assert!(genesis.previous_block_hash.is_none());
+        assert_eq!(initial_transactions.len(), genesis.transactions.len());
+    }
+
+    #[test]
+    fn test_verify_genesis_no_transaction() {
+        let genesis = Block::genesis(&[]);
+        let res = genesis.verify();
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_verify_genesis_with_transactions() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
+        let genesis = Block::genesis(&initial_transactions);
+        let res = genesis.verify();
+        assert!(res.is_ok());
     }
 
     #[test]
     fn test_new_empty() {
         let empty = Block::new(12, &[], &Hash::zero().to_vec());
         assert!(empty.is_ok());
+    }
+
+    #[test]
+    fn test_new_incorrect_height() {
+        let empty = Block::new(1, &[], &Hash::zero().to_vec());
+        assert!(empty.is_err());
     }
 
     #[test]
@@ -141,9 +198,9 @@ mod tests {
         let block = Block::new(
             2,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         );
@@ -151,10 +208,20 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_genesis() {
-        let genesis = Block::genesis();
-        let res = genesis.verify();
-        assert!(res.is_ok());
+    fn test_new_with_invalid_transactions() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let block = Block::new(
+            2,
+            &[
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::genesis(&Address::from(keypair_2.public), 15),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+            ],
+            &Hash::zero().to_vec(),
+        );
+        assert!(block.is_err());
     }
 
     #[test]
@@ -172,9 +239,9 @@ mod tests {
         let blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -192,9 +259,9 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -214,9 +281,9 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -236,16 +303,17 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
         .unwrap();
 
-        blk.transactions[0] =
-            Transaction::new(&keypair, &Address::from(keypair_2.public), 14.0).unwrap();
+        // Tamper the block
+        blk.transactions[1] =
+            Transaction::new(&keypair, &Address::from(keypair_2.public), 14, 2).unwrap();
 
         let res = blk.verify();
         assert!(res.is_err());
