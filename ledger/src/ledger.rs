@@ -18,34 +18,50 @@ impl Ledger {
         Ok(Ledger { blockchain })
     }
 
-    pub fn verify(&self) -> Result<()> {
-        for i in 0..self.blockchain.len() {
-            if i > 0 {
-                // Check height
-                if self.blockchain[i].height != self.blockchain[i - 1].height + 1 {
-                    return Err(LedgerError::ChainInvalidHeights);
-                }
+    // pub fn verify(&self) -> Result<()> {
+    //     for i in 0..self.blockchain.len() {
+    //         if i > 0 {
+    //             // Check height
+    //             if self.blockchain[i].height != self.blockchain[i - 1].height + 1 {
+    //                 return Err(LedgerError::ChainInvalidHeights);
+    //             }
+    //
+    //             // Check previous hash
+    //             if self.blockchain[i]
+    //                 .previous_block_hash
+    //                 .as_deref()
+    //                 .ok_or(LedgerError::ChainPreviousHashMissing)?
+    //                 != self.blockchain[i - 1].hash.as_slice()
+    //             {
+    //                 return Err(LedgerError::ChainInvalidHashes);
+    //             }
+    //         }
+    //
+    //         self.blockchain[i].verify()?;
+    //
+    //     }
+    //
+    //     Ok(())
+    // }
 
-                // Check previous hash
-                if self.blockchain[i]
-                    .previous_block_hash
-                    .as_deref()
-                    .ok_or(LedgerError::ChainPreviousHashMissing)?
-                    != self.blockchain[i - 1].hash.as_slice()
-                {
-                    return Err(LedgerError::ChainInvalidHashes);
-                }
-            }
-
-            self.blockchain[i].verify()?;
-
-            // TODO Check transactions in the context of the ledger
+    pub fn add_block(&mut self, block: Block) -> Result<()> {
+        let next_height = self.get_current_height() + 1;
+        if block.height != next_height {
+            return Err(LedgerError::BlockInvalidHeight);
+        }
+        if block.previous_block_hash.is_none()
+            || block.previous_block_hash.as_deref().unwrap() != self.blockchain.last().unwrap().hash
+        {
+            return Err(LedgerError::ChainInvalidHashes);
         }
 
+        self.check_transactions_balance(&block)?;
+
+        self.blockchain.push(block);
         Ok(())
     }
 
-    pub fn add_block(&mut self, transactions: &[Transaction]) -> Result<()> {
+    pub fn add_block_from_transactions(&mut self, transactions: &[Transaction]) -> Result<()> {
         let next_height = self.get_current_height() + 1;
         let previous_hash = self
             .blockchain
@@ -59,10 +75,16 @@ impl Ledger {
         }
 
         let blk = Block::new(next_height, transactions, previous_hash)?;
+        self.check_transactions_balance(&blk)?;
 
+        self.blockchain.push(blk);
+        Ok(())
+    }
+
+    fn check_transactions_balance(&self, block: &Block) -> Result<()> {
         // Get balances for addresses in the transactions
         let mut balances = HashMap::new();
-        for tx in &blk.transactions {
+        for tx in &block.transactions {
             let from_addr = Address::from(tx.signature.as_ref().unwrap().pubkey);
             let to_addr = &tx.payload.to_address;
             if !balances.contains_key(&from_addr) {
@@ -79,7 +101,6 @@ impl Ledger {
             return Err(LedgerError::LedgerBalanceError);
         }
 
-        self.blockchain.push(blk);
         Ok(())
     }
 
@@ -165,12 +186,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_empty() {
-        let ledger = Ledger::new(&[]).unwrap();
-        assert!(ledger.verify().is_ok());
-    }
-
-    #[test]
     fn test_add_empty_block() {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
         let keypair_2: Keypair = Keypair::generate(&mut OsRng);
@@ -180,7 +195,7 @@ mod tests {
             Transaction::genesis(&Address::from(keypair_2.public), 12),
         ])
         .unwrap();
-        let res = ledger.add_block(&[]);
+        let res = ledger.add_block_from_transactions(&[]);
         assert!(res.is_ok());
         assert_eq!(2, ledger.blockchain.len());
     }
@@ -212,7 +227,13 @@ mod tests {
         .unwrap();
 
         ledger
-            .add_block(&[Transaction::new(&user1, &Address::from(user2.public), 5, 2).unwrap()])
+            .add_block_from_transactions(&[Transaction::new(
+                &user1,
+                &Address::from(user2.public),
+                5,
+                2,
+            )
+            .unwrap()])
             .unwrap();
 
         assert_eq!(
@@ -236,11 +257,17 @@ mod tests {
         .unwrap();
 
         ledger
-            .add_block(&[Transaction::new(&user1, &Address::from(user2.public), 5, 2).unwrap()])
+            .add_block_from_transactions(&[Transaction::new(
+                &user1,
+                &Address::from(user2.public),
+                5,
+                2,
+            )
+            .unwrap()])
             .unwrap();
 
         ledger
-            .add_block(&[
+            .add_block_from_transactions(&[
                 Transaction::new(&user2, &Address::from(user1.public), 3, 1).unwrap(),
                 Transaction::new(&user2, &Address::from(user1.public), 5, 2).unwrap(),
                 Transaction::new(&user1, &Address::from(user2.public), 6, 3).unwrap(),
@@ -267,23 +294,29 @@ mod tests {
         ])
         .unwrap();
 
-        let res =
-            ledger.add_block(&[
-                Transaction::new(&user1, &Address::from(user2.public), 14, 2).unwrap(),
-            ]);
+        let res = ledger.add_block_from_transactions(&[Transaction::new(
+            &user1,
+            &Address::from(user2.public),
+            14,
+            2,
+        )
+        .unwrap()]);
 
         assert!(res.is_err());
         assert_eq!(1, ledger.blockchain.len());
 
-        let res =
-            ledger.add_block(&[
-                Transaction::new(&user2, &Address::from(user1.public), 15, 1).unwrap(),
-            ]);
+        let res = ledger.add_block_from_transactions(&[Transaction::new(
+            &user2,
+            &Address::from(user1.public),
+            15,
+            1,
+        )
+        .unwrap()]);
 
         assert!(res.is_err());
         assert_eq!(1, ledger.blockchain.len());
 
-        let res = ledger.add_block(&[
+        let res = ledger.add_block_from_transactions(&[
             Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
             Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
         ]);
@@ -291,10 +324,13 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(1, ledger.blockchain.len());
 
-        let res =
-            ledger.add_block(&[
-                Transaction::new(&user2, &Address::from(user1.public), 14, 1).unwrap(),
-            ]);
+        let res = ledger.add_block_from_transactions(&[Transaction::new(
+            &user2,
+            &Address::from(user1.public),
+            14,
+            1,
+        )
+        .unwrap()]);
 
         assert!(res.is_ok());
         assert_eq!(2, ledger.blockchain.len());
