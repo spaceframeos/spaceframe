@@ -4,6 +4,7 @@ use crate::account::Address;
 use crate::block::Block;
 use crate::errors::{LedgerError, Result};
 use crate::transaction::Transaction;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Ledger {
@@ -57,9 +58,27 @@ impl Ledger {
             return Err(LedgerError::ChainInvalidHashes);
         }
 
-        // TODO Check transactions in the context of the ledger
-
         let blk = Block::new(next_height, transactions, previous_hash)?;
+
+        // Get balances for addresses in the transactions
+        let mut balances = HashMap::new();
+        for tx in &blk.transactions {
+            let from_addr = Address::from(tx.signature.as_ref().unwrap().pubkey);
+            let to_addr = &tx.payload.to_address;
+            if !balances.contains_key(&from_addr) {
+                balances.insert(from_addr.clone(), self.get_balance(&from_addr)? as i128);
+            }
+            if !balances.contains_key(to_addr) {
+                balances.insert(to_addr.clone(), self.get_balance(to_addr)? as i128);
+            }
+            *balances.get_mut(&from_addr).unwrap() -= (tx.payload.amount + tx.payload.fee) as i128;
+            *balances.get_mut(to_addr).unwrap() += tx.payload.amount as i128;
+        }
+
+        if balances.iter().any(|a| a.1 < &0i128) {
+            return Err(LedgerError::LedgerBalanceError);
+        }
+
         self.blockchain.push(blk);
         Ok(())
     }
@@ -254,6 +273,7 @@ mod tests {
             ]);
 
         assert!(res.is_err());
+        assert_eq!(1, ledger.blockchain.len());
 
         let res =
             ledger.add_block(&[
@@ -261,5 +281,23 @@ mod tests {
             ]);
 
         assert!(res.is_err());
+        assert_eq!(1, ledger.blockchain.len());
+
+        let res = ledger.add_block(&[
+            Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
+            Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
+        ]);
+
+        assert!(res.is_err());
+        assert_eq!(1, ledger.blockchain.len());
+
+        let res =
+            ledger.add_block(&[
+                Transaction::new(&user2, &Address::from(user1.public), 14, 1).unwrap(),
+            ]);
+
+        assert!(res.is_ok());
+        assert_eq!(2, ledger.blockchain.len());
+        assert_eq!(0, ledger.get_balance(&Address::from(user2.public)).unwrap());
     }
 }

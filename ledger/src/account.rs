@@ -11,7 +11,7 @@ pub struct Account {}
 
 const VERSION: &[u8] = b"01";
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Address([u8; Address::ADDRESS_LENGTH]);
 
 impl Address {

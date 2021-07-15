@@ -99,6 +99,7 @@ impl Transaction {
                     .or(Err(LedgerError::TxInvalidSignature))
             })
     }
+
 }
 
 impl Display for Transaction {
