@@ -23,7 +23,7 @@ impl Block {
             previous_block_hash: None,
             merkle_root: None,
         };
-        blk.hash = blk.calculate_hash().unwrap().to_vec();
+        blk.hash = blk.calculate_hash().unwrap().block_hash.to_vec();
         blk
     }
 
@@ -40,14 +40,9 @@ impl Block {
             hash: Vec::new(),
         };
 
-        if transactions.len() > 0 {
-            block.merkle_root = Some(Self::calculate_merkle_root(transactions)?);
-        } else {
-            block.merkle_root = None;
-        }
-
         let block_hash = block.calculate_hash()?;
-        block.hash = block_hash.to_vec();
+        block.hash = block_hash.block_hash.to_vec();
+        block.merkle_root = block_hash.merkle_root.map(|x| x.to_vec());
 
         Ok(block)
     }
@@ -59,16 +54,15 @@ impl Block {
             return Err(LedgerError::BlockInvalid);
         }
 
-        // Check hash
-        let block_hash = self.calculate_hash()?.to_vec();
-        if block_hash != self.hash {
+        // Check hash and transactions
+        let hash = self.calculate_hash()?;
+        if hash.block_hash.to_vec() != self.hash {
             return Err(LedgerError::BlockInvalid);
         }
 
-        // Check transactions
-        if self.merkle_root.is_some() && self.transactions.len() > 0 {
-            let root = Self::calculate_merkle_root(&self.transactions)?;
-            if root != self.merkle_root.as_deref().unwrap() {
+        // Check merkle root
+        if self.merkle_root.is_some() && hash.merkle_root.is_some() {
+            if hash.merkle_root.unwrap().to_vec() != self.merkle_root.as_deref().unwrap() {
                 return Err(LedgerError::BlockInvalid);
             }
         }
@@ -76,7 +70,28 @@ impl Block {
         Ok(())
     }
 
-    fn calculate_merkle_root(transactions: &[Transaction]) -> Result<Vec<u8>> {
+    fn calculate_hash(&self) -> Result<BlockHash> {
+        let mut bytes = self.height.to_be_bytes().to_vec();
+
+        if self.previous_block_hash.is_some() {
+            bytes.extend_from_slice(&self.previous_block_hash.as_deref().unwrap());
+        }
+
+        let merkle_root = if self.transactions.len() > 0 {
+            let root = Self::calculate_merkle_root(&self.transactions)?;
+            bytes.extend_from_slice(root.as_ref());
+            Some(root)
+        } else {
+            None
+        };
+
+        Ok(BlockHash {
+            block_hash: Hash::hash(bytes),
+            merkle_root,
+        })
+    }
+
+    fn calculate_merkle_root(transactions: &[Transaction]) -> Result<Hash> {
         let mut tx_bytes = Vec::new();
         for transaction in transactions {
             transaction.verify()?;
@@ -88,21 +103,13 @@ impl Block {
         Ok(merkle_tree
             .root()
             .ok_or(LedgerError::BlockEmptyMerkleRoot)?
-            .to_vec())
+            .clone())
     }
+}
 
-    fn calculate_hash(&self) -> Result<Hash> {
-        let mut bytes = self.height.to_be_bytes().to_vec();
-
-        if self.previous_block_hash.is_some() {
-            bytes.extend_from_slice(&self.previous_block_hash.as_deref().unwrap());
-        }
-        if self.merkle_root.is_some() {
-            bytes.extend_from_slice(&self.merkle_root.as_deref().unwrap());
-        }
-
-        Ok(Hash::hash(bytes))
-    }
+struct BlockHash {
+    block_hash: Hash,
+    merkle_root: Option<Hash>,
 }
 
 #[cfg(test)]
@@ -158,11 +165,89 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_invalid_hash() {}
+    fn test_verify_with_transactions() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let blk = Block::new(
+            12,
+            &[
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+            ],
+            &Hash::zero().to_vec(),
+        )
+        .unwrap();
+
+        let res = blk.verify();
+        assert!(res.is_ok());
+    }
 
     #[test]
-    fn test_verify_invalid_merkle_root() {}
+    fn test_verify_invalid_hash() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let mut blk = Block::new(
+            12,
+            &[
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+            ],
+            &Hash::zero().to_vec(),
+        )
+        .unwrap();
+
+        blk.hash = Hash::zero().to_vec();
+
+        let res = blk.verify();
+        assert!(res.is_err());
+    }
 
     #[test]
-    fn test_verify_invalid_transaction() {}
+    fn test_verify_invalid_merkle_root() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let mut blk = Block::new(
+            12,
+            &[
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+            ],
+            &Hash::zero().to_vec(),
+        )
+        .unwrap();
+
+        blk.merkle_root = Some(Hash::zero().to_vec());
+
+        let res = blk.verify();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_verify_invalid_transaction() {
+        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+
+        let mut blk = Block::new(
+            12,
+            &[
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 13.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 15.0).unwrap(),
+                Transaction::new(&keypair, &Address::from(keypair_2.public), 12.0).unwrap(),
+            ],
+            &Hash::zero().to_vec(),
+        )
+        .unwrap();
+
+        blk.transactions[0] =
+            Transaction::new(&keypair, &Address::from(keypair_2.public), 14.0).unwrap();
+
+        let res = blk.verify();
+        assert!(res.is_err());
+    }
 }
