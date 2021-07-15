@@ -10,7 +10,7 @@ members = [
     "network",
     "mempool",
     "ledger",
-    "ledger/merkle-tree",
+    "merkletree",
 ]
 
 [profile.release]

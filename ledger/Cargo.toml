@@ -15,4 +15,4 @@ ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 base58 = "0.1.0"
 rand = "0.7"
 spaceframe-crypto = { path="../crypto" }
-spaceframe-merkle-tree = { path = "./merkle-tree" }
+spaceframe-merkletree = { path = "../merkletree" }

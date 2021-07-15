@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::{LedgerError, Result};
 use crate::transaction::Transaction;
 use spaceframe_crypto::hash::Hash;
-use spaceframe_merkle_tree::MerkleTree;
+use spaceframe_merkletree::MerkleTree;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Block {

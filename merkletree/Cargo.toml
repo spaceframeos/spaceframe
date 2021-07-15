@@ -1,5 +1,5 @@
 [package]
-name = "spaceframe-merkle-tree"
+name = "spaceframe-merkletree"
 version = "0.1.0"
 authors = ["Gil Balsiger <gil.balsiger@heig-vd.ch>"]
 edition = "2018"
@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 hex = "0.4.3"
 blake3 = "0.3.8"
-spaceframe-crypto = { path = "../../crypto" }
+spaceframe-crypto = { path = "../crypto" }
