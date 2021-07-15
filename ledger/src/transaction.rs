@@ -10,10 +10,10 @@ const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TransactionPayload {
-    timestamp: i64,
-    to_address: Address,
-    amount: u64,
-    fee: u64,
+    pub timestamp: i64,
+    pub to_address: Address,
+    pub amount: u64,
+    pub fee: u64,
 }
 
 impl TransactionPayload {
@@ -43,14 +43,14 @@ impl TransactionPayload {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct TransactionSignature {
-    pubkey: PublicKey,
-    signature: Signature,
+pub struct TransactionSignature {
+    pub pubkey: PublicKey,
+    pub signature: Signature,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transaction {
-    signature: Option<TransactionSignature>,
+    pub signature: Option<TransactionSignature>,
     pub payload: TransactionPayload,
 }
 

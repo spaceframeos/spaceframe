@@ -18,6 +18,7 @@ pub enum LedgerError {
     ChainPreviousHashMissing,
     ChainInvalidHashes,
     ChainNoGenesis,
+    LedgerBalanceError,
 }
 
 impl Display for LedgerError {
@@ -43,6 +44,7 @@ impl Display for LedgerError {
                     "chain must have a genesis block before adding another block"
                 )
             }
+            _ => write!(f, "ledger error happened"),
         }
     }
 }

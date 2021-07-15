@@ -15,7 +15,13 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn genesis(initial_transactions: &[Transaction]) -> Self {
+    pub fn genesis(initial_transactions: &[Transaction]) -> Result<Self> {
+        for tx in initial_transactions {
+            if tx.signature.is_some() {
+                return Err(LedgerError::TxSignatureError);
+            }
+        }
+
         let mut blk = Block {
             height: 1,
             hash: Hash::zero().to_vec(),
@@ -23,11 +29,13 @@ impl Block {
             previous_block_hash: None,
             merkle_root: None,
         };
-        let hashes = blk.calculate_hash().unwrap();
+        let hashes = blk.calculate_hash()?;
         blk.hash = hashes.block_hash.to_vec();
         blk.merkle_root = hashes.merkle_root.map(|x| x.to_vec());
 
-        blk
+        blk.verify()?;
+
+        Ok(blk)
     }
 
     pub fn new(
@@ -146,7 +154,7 @@ mod tests {
     #[test]
     fn test_new_genesis_no_transaction() {
         let initial_transactions = Vec::new();
-        let genesis = Block::genesis(&initial_transactions);
+        let genesis = Block::genesis(&initial_transactions).unwrap();
         assert!(genesis.merkle_root.is_none());
         assert!(genesis.previous_block_hash.is_none());
         assert_eq!(initial_transactions.len(), genesis.transactions.len());
@@ -156,7 +164,7 @@ mod tests {
     fn test_new_genesis_with_transactions() {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
         let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
-        let genesis = Block::genesis(&initial_transactions);
+        let genesis = Block::genesis(&initial_transactions).unwrap();
         assert!(genesis.merkle_root.is_some());
         assert!(genesis.previous_block_hash.is_none());
         assert_eq!(initial_transactions.len(), genesis.transactions.len());
@@ -164,7 +172,7 @@ mod tests {
 
     #[test]
     fn test_verify_genesis_no_transaction() {
-        let genesis = Block::genesis(&[]);
+        let genesis = Block::genesis(&[]).unwrap();
         let res = genesis.verify();
         assert!(res.is_ok());
     }
@@ -173,7 +181,7 @@ mod tests {
     fn test_verify_genesis_with_transactions() {
         let keypair: Keypair = Keypair::generate(&mut OsRng);
         let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
-        let genesis = Block::genesis(&initial_transactions);
+        let genesis = Block::genesis(&initial_transactions).unwrap();
         let res = genesis.verify();
         assert!(res.is_ok());
     }
