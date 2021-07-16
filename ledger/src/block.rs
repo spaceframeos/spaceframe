@@ -1,20 +1,19 @@
 use crate::errors::{LedgerError, Result};
-use crate::transaction::Transaction;
-use serde::{Deserialize, Serialize};
+use crate::transaction::Tx;
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Block {
     pub height: u64,
     pub hash: Vec<u8>,
     pub previous_block_hash: Option<Vec<u8>>,
-    pub transactions: Vec<Transaction>,
+    pub transactions: Vec<Tx>,
     pub merkle_root: Option<Vec<u8>>,
 }
 
 impl Block {
-    pub fn genesis(initial_transactions: &[Transaction]) -> Result<Self> {
+    pub fn genesis(initial_transactions: &[Tx]) -> Result<Self> {
         for tx in initial_transactions {
             if tx.signature.is_some() {
                 return Err(LedgerError::TxSignatureError);
@@ -24,7 +23,7 @@ impl Block {
         let mut blk = Block {
             height: 1,
             hash: Hash::zero().to_vec(),
-            transactions: initial_transactions.to_owned(),
+            transactions: initial_transactions.to_vec(),
             previous_block_hash: None,
             merkle_root: None,
         };
@@ -37,11 +36,7 @@ impl Block {
         Ok(blk)
     }
 
-    pub fn new(
-        height: u64,
-        transactions: &[Transaction],
-        previous_block_hash: &[u8],
-    ) -> Result<Self> {
+    pub fn new(height: u64, transactions: &[Tx], previous_block_hash: &[u8]) -> Result<Self> {
         // Check height
         if height < 2 {
             return Err(LedgerError::BlockInvalidHeight);
@@ -123,7 +118,7 @@ impl Block {
         })
     }
 
-    fn calculate_merkle_root(transactions: &[Transaction]) -> Result<Hash> {
+    fn calculate_merkle_root(transactions: &[Tx]) -> Result<Hash> {
         let mut tx_bytes = Vec::new();
         for transaction in transactions {
             tx_bytes.push(transaction.payload.as_bytes());
@@ -148,6 +143,7 @@ mod tests {
     use super::*;
     use crate::account::Address;
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
+    use spaceframe_crypto::traits::Keypair;
 
     #[test]
     fn test_new_genesis_no_transaction() {
@@ -161,7 +157,7 @@ mod tests {
     #[test]
     fn test_new_genesis_with_transactions() {
         let keypair = Ed25519KeyPair::generate();
-        let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
+        let initial_transactions = vec![Tx::genesis(&Address::from(keypair.public), 1234)];
         let genesis = Block::genesis(&initial_transactions).unwrap();
         assert!(genesis.merkle_root.is_some());
         assert!(genesis.previous_block_hash.is_none());
@@ -178,7 +174,7 @@ mod tests {
     #[test]
     fn test_verify_genesis_with_transactions() {
         let keypair = Ed25519KeyPair::generate();
-        let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
+        let initial_transactions = vec![Tx::genesis(&Address::from(keypair.public), 1234)];
         let genesis = Block::genesis(&initial_transactions).unwrap();
         let res = genesis.verify();
         assert!(res.is_ok());
@@ -204,9 +200,9 @@ mod tests {
         let block = Block::new(
             2,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         );
@@ -221,9 +217,9 @@ mod tests {
         let block = Block::new(
             2,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::genesis(&Address::from(keypair_2.public), 15),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::genesis(&Address::from(keypair_2.public), 15),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         );
@@ -245,9 +241,9 @@ mod tests {
         let blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -265,9 +261,9 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -287,9 +283,9 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
@@ -309,17 +305,16 @@ mod tests {
         let mut blk = Block::new(
             12,
             &[
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
-                Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 15, 2).unwrap(),
+                Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
         )
         .unwrap();
 
         // Tamper the block
-        blk.transactions[1] =
-            Transaction::new(&keypair, &Address::from(keypair_2.public), 14, 2).unwrap();
+        blk.transactions[1] = Tx::new(&keypair, &Address::from(keypair_2.public), 14, 2).unwrap();
 
         let res = blk.verify();
         assert!(res.is_err());

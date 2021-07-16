@@ -1,11 +1,10 @@
-use crate::traits::{CryptoSuit, Keypair, PrivateKey, PublicKey, Signature};
+use crate::traits::{Keypair, PrivateKey, PublicKey, Signature};
 use ed25519_dalek::PublicKey as DalekPublicKey;
 use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
 use ed25519_dalek::{ExpandedSecretKey, SecretKey as DalekPrivateKey, Signature as DalekSignature};
 use rand::rngs::OsRng;
-use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct Ed25519KeyPair {
     pub public: Ed25519PublicKey,
     pub private: Ed25519PrivateKey,
@@ -14,7 +13,6 @@ pub struct Ed25519KeyPair {
 impl Keypair for Ed25519KeyPair {
     type PublicKeyType = Ed25519PublicKey;
     type PrivateKeyType = Ed25519PrivateKey;
-    type SignatureType = Ed25519Signature;
 
     fn generate() -> Self {
         let keypair = DalekKeypair::generate(&mut OsRng);
@@ -28,7 +26,7 @@ impl Keypair for Ed25519KeyPair {
         &self,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<Self::SignatureType, SignatureError>
+    ) -> Result<<<Self as Keypair>::PublicKeyType as PublicKey>::SignatureType, SignatureError>
     where
         T: AsRef<[u8]>,
     {
@@ -44,7 +42,7 @@ impl Keypair for Ed25519KeyPair {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct Ed25519PrivateKey(DalekPrivateKey);
 
 impl PrivateKey for Ed25519PrivateKey {
@@ -77,7 +75,7 @@ impl PrivateKey for Ed25519PrivateKey {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Ed25519PublicKey(DalekPublicKey);
 
 impl PublicKey for Ed25519PublicKey {
@@ -99,7 +97,7 @@ impl PublicKey for Ed25519PublicKey {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Ed25519Signature(DalekSignature);
 
 impl Ed25519Signature {
@@ -109,12 +107,3 @@ impl Ed25519Signature {
 }
 
 impl Signature for Ed25519Signature {}
-
-struct Ed25519CryptoSuit;
-
-impl CryptoSuit for Ed25519CryptoSuit {
-    type Keypair = Ed25519KeyPair;
-    type PubKey = Ed25519PublicKey;
-    type PrivKey = Ed25519PrivateKey;
-    type Signature = Ed25519Signature;
-}

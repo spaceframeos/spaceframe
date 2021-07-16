@@ -1,17 +1,16 @@
 use crate::account::Address;
 use crate::block::Block;
 use crate::errors::{LedgerError, Result};
-use crate::transaction::Transaction;
-use serde::{Deserialize, Serialize};
+use crate::transaction::Tx;
 use std::collections::HashMap;
 
-#[derive(Deserialize, Serialize, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Ledger {
     blockchain: Vec<Block>,
 }
 
 impl Ledger {
-    pub fn new(initial_transactions: &[Transaction]) -> Result<Self> {
+    pub fn new(initial_transactions: &[Tx]) -> Result<Self> {
         let mut blockchain = Vec::new();
         blockchain.push(Block::genesis(initial_transactions)?);
         Ok(Ledger { blockchain })
@@ -60,7 +59,7 @@ impl Ledger {
         Ok(())
     }
 
-    pub fn add_block_from_transactions(&mut self, transactions: &[Transaction]) -> Result<()> {
+    pub fn add_block_from_transactions(&mut self, transactions: &[Tx]) -> Result<()> {
         let next_height = self.get_current_height() + 1;
         let previous_hash = self
             .blockchain
@@ -151,6 +150,7 @@ mod tests {
     use super::*;
     use crate::account::Address;
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
+    use spaceframe_crypto::traits::Keypair;
 
     #[test]
     fn test_new_ledger() {
@@ -163,9 +163,9 @@ mod tests {
     fn test_new_with_transactions() {
         let keypair_2 = Ed25519KeyPair::generate();
         let ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(keypair_2.public), 13),
-            Transaction::genesis(&Address::from(keypair_2.public), 15),
-            Transaction::genesis(&Address::from(keypair_2.public), 12),
+            Tx::genesis(&Address::from(keypair_2.public), 13),
+            Tx::genesis(&Address::from(keypair_2.public), 15),
+            Tx::genesis(&Address::from(keypair_2.public), 12),
         ]);
         assert!(ledger.is_ok());
     }
@@ -175,9 +175,9 @@ mod tests {
         let keypair = Ed25519KeyPair::generate();
         let keypair_2 = Ed25519KeyPair::generate();
         let ledger = Ledger::new(&[
-            Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
-            Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 3).unwrap(),
-            Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 1).unwrap(),
+            Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
+            Tx::new(&keypair, &Address::from(keypair_2.public), 15, 3).unwrap(),
+            Tx::new(&keypair, &Address::from(keypair_2.public), 12, 1).unwrap(),
         ]);
         assert!(ledger.is_err());
     }
@@ -186,9 +186,9 @@ mod tests {
     fn test_add_empty_block() {
         let keypair_2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(keypair_2.public), 13),
-            Transaction::genesis(&Address::from(keypair_2.public), 15),
-            Transaction::genesis(&Address::from(keypair_2.public), 12),
+            Tx::genesis(&Address::from(keypair_2.public), 13),
+            Tx::genesis(&Address::from(keypair_2.public), 15),
+            Tx::genesis(&Address::from(keypair_2.public), 12),
         ])
         .unwrap();
         let res = ledger.add_block_from_transactions(&[]);
@@ -200,9 +200,9 @@ mod tests {
     fn test_balance_genesis() {
         let user1 = Ed25519KeyPair::generate();
         let ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(user1.public), 13),
-            Transaction::genesis(&Address::from(user1.public), 15),
-            Transaction::genesis(&Address::from(user1.public), 12),
+            Tx::genesis(&Address::from(user1.public), 13),
+            Tx::genesis(&Address::from(user1.public), 15),
+            Tx::genesis(&Address::from(user1.public), 12),
         ])
         .unwrap();
 
@@ -217,19 +217,15 @@ mod tests {
         let user1 = Ed25519KeyPair::generate();
         let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(user1.public), 13),
-            Transaction::genesis(&Address::from(user2.public), 15),
+            Tx::genesis(&Address::from(user1.public), 13),
+            Tx::genesis(&Address::from(user2.public), 15),
         ])
         .unwrap();
 
         ledger
-            .add_block_from_transactions(&[Transaction::new(
-                &user1,
-                &Address::from(user2.public),
-                5,
-                2,
-            )
-            .unwrap()])
+            .add_block_from_transactions(&[
+                Tx::new(&user1, &Address::from(user2.public), 5, 2).unwrap()
+            ])
             .unwrap();
 
         assert_eq!(
@@ -247,26 +243,22 @@ mod tests {
         let user1 = Ed25519KeyPair::generate();
         let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(user1.public), 13),
-            Transaction::genesis(&Address::from(user2.public), 15),
+            Tx::genesis(&Address::from(user1.public), 13),
+            Tx::genesis(&Address::from(user2.public), 15),
         ])
         .unwrap();
 
         ledger
-            .add_block_from_transactions(&[Transaction::new(
-                &user1,
-                &Address::from(user2.public),
-                5,
-                2,
-            )
-            .unwrap()])
+            .add_block_from_transactions(&[
+                Tx::new(&user1, &Address::from(user2.public), 5, 2).unwrap()
+            ])
             .unwrap();
 
         ledger
             .add_block_from_transactions(&[
-                Transaction::new(&user2, &Address::from(user1.public), 3, 1).unwrap(),
-                Transaction::new(&user2, &Address::from(user1.public), 5, 2).unwrap(),
-                Transaction::new(&user1, &Address::from(user2.public), 6, 3).unwrap(),
+                Tx::new(&user2, &Address::from(user1.public), 3, 1).unwrap(),
+                Tx::new(&user2, &Address::from(user1.public), 5, 2).unwrap(),
+                Tx::new(&user1, &Address::from(user2.public), 6, 3).unwrap(),
             ])
             .unwrap();
 
@@ -285,12 +277,12 @@ mod tests {
         let user1 = Ed25519KeyPair::generate();
         let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
-            Transaction::genesis(&Address::from(user1.public), 13),
-            Transaction::genesis(&Address::from(user2.public), 15),
+            Tx::genesis(&Address::from(user1.public), 13),
+            Tx::genesis(&Address::from(user2.public), 15),
         ])
         .unwrap();
 
-        let res = ledger.add_block_from_transactions(&[Transaction::new(
+        let res = ledger.add_block_from_transactions(&[Tx::new(
             &user1,
             &Address::from(user2.public),
             14,
@@ -301,7 +293,7 @@ mod tests {
         assert!(res.is_err());
         assert_eq!(1, ledger.blockchain.len());
 
-        let res = ledger.add_block_from_transactions(&[Transaction::new(
+        let res = ledger.add_block_from_transactions(&[Tx::new(
             &user2,
             &Address::from(user1.public),
             15,
@@ -313,14 +305,14 @@ mod tests {
         assert_eq!(1, ledger.blockchain.len());
 
         let res = ledger.add_block_from_transactions(&[
-            Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
-            Transaction::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
+            Tx::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
+            Tx::new(&user2, &Address::from(user1.public), 7, 1).unwrap(),
         ]);
 
         assert!(res.is_err());
         assert_eq!(1, ledger.blockchain.len());
 
-        let res = ledger.add_block_from_transactions(&[Transaction::new(
+        let res = ledger.add_block_from_transactions(&[Tx::new(
             &user2,
             &Address::from(user1.public),
             14,

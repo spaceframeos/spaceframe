@@ -57,6 +57,7 @@ impl<T: PublicKey> From<T> for Address {
 mod tests {
     use super::*;
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
+    use spaceframe_crypto::traits::Keypair;
 
     #[test]
     fn test_from_pubkey() {

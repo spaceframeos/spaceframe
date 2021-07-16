@@ -1,9 +1,9 @@
 use ed25519_dalek::SignatureError;
+use std::fmt::Debug;
 
-pub trait Keypair {
-    type PublicKeyType;
-    type PrivateKeyType;
-    type SignatureType;
+pub trait Keypair: Debug {
+    type PublicKeyType: PublicKey;
+    type PrivateKeyType: PrivateKey;
 
     fn generate() -> Self;
 
@@ -11,7 +11,7 @@ pub trait Keypair {
         &self,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<Self::SignatureType, SignatureError>
+    ) -> Result<<<Self as Keypair>::PublicKeyType as PublicKey>::SignatureType, SignatureError>
     where
         T: AsRef<[u8]>;
 
@@ -20,7 +20,7 @@ pub trait Keypair {
     fn private_key(&self) -> &Self::PrivateKeyType;
 }
 
-pub trait PrivateKey {
+pub trait PrivateKey: Debug {
     type SignatureType: Signature;
     type PublicKeyType: PublicKey;
 
@@ -38,7 +38,7 @@ pub trait PrivateKey {
     fn as_bytes(&self) -> &[u8];
 }
 
-pub trait PublicKey {
+pub trait PublicKey: Copy + Clone + PartialEq + Debug {
     type SignatureType: Signature;
 
     fn verify<T: AsRef<[u8]>>(
@@ -51,11 +51,4 @@ pub trait PublicKey {
     fn as_bytes(&self) -> &[u8];
 }
 
-pub trait Signature {}
-
-pub trait CryptoSuit {
-    type Keypair: Keypair;
-    type PubKey: PublicKey;
-    type PrivKey: PrivateKey;
-    type Signature: Signature;
-}
+pub trait Signature: Clone + PartialEq + Debug {}

@@ -3,14 +3,15 @@ use crate::errors::LedgerError;
 use crate::errors::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
-use serde::{Deserialize, Serialize};
-use spaceframe_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519Signature};
+use spaceframe_crypto::ed25519::Ed25519KeyPair;
 use spaceframe_crypto::traits::{Keypair, PublicKey};
 use std::fmt::{Display, Formatter};
 
 const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
-#[derive(BorshSerialize, BorshDeserialize, Deserialize, Serialize, PartialEq, Clone, Debug)]
+pub type Tx = Transaction<Ed25519KeyPair>;
+
+#[derive(BorshSerialize, BorshDeserialize, PartialEq, Clone, Debug)]
 pub struct TransactionPayload {
     pub timestamp: i64,
     pub to_address: Address,
@@ -19,14 +20,14 @@ pub struct TransactionPayload {
 }
 
 impl TransactionPayload {
-    pub fn finalize(self, keypair: &Ed25519KeyPair) -> Result<Transaction> {
+    pub fn finalize<T: Keypair>(self, keypair: &T) -> Result<Transaction<T>> {
         let signature = keypair
             .sign(self.as_bytes(), Some(CONTEXT))
             .or(Err(LedgerError::TxSignatureError))?;
 
         Ok(Transaction {
             signature: Some(TransactionSignature {
-                pubkey: keypair.public,
+                pubkey: keypair.public_key(),
                 signature,
             }),
             payload: self,
@@ -38,27 +39,27 @@ impl TransactionPayload {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct TransactionSignature {
-    pub pubkey: Ed25519PublicKey,
-    pub signature: Ed25519Signature,
+#[derive(PartialEq, Clone, Debug)]
+pub struct TransactionSignature<T: PublicKey> {
+    pub pubkey: T,
+    pub signature: T::SignatureType,
 }
 
-impl TransactionSignature {
-    pub fn verify<T: AsRef<[u8]>>(&self, data: T) -> Result<()> {
+impl<T: PublicKey> TransactionSignature<T> {
+    pub fn verify<D: AsRef<[u8]>>(&self, data: D) -> Result<()> {
         self.pubkey
             .verify(&self.signature, data, Some(CONTEXT))
             .or(Err(LedgerError::TxInvalidSignature))
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct Transaction {
-    pub signature: Option<TransactionSignature>,
+#[derive(Debug)]
+pub struct Transaction<T: Keypair> {
+    pub signature: Option<TransactionSignature<T::PublicKeyType>>,
     pub payload: TransactionPayload,
 }
 
-impl Transaction {
+impl<T: Keypair> Transaction<T> {
     pub fn genesis(address: &Address, amount: u64) -> Self {
         Transaction {
             payload: TransactionPayload {
@@ -71,13 +72,8 @@ impl Transaction {
         }
     }
 
-    pub fn new(
-        keypair: &Ed25519KeyPair,
-        receiver_address: &Address,
-        amount: u64,
-        fee: u64,
-    ) -> Result<Self> {
-        if Address::from(keypair.public) == *receiver_address {
+    pub fn new(keypair: &T, receiver_address: &Address, amount: u64, fee: u64) -> Result<Self> {
+        if Address::from(keypair.public_key()) == *receiver_address {
             return Err(LedgerError::TxSelfTransaction);
         }
 
@@ -98,12 +94,12 @@ impl Transaction {
         self.signature
             .as_ref()
             .map_or(Err(LedgerError::TxNoSignature), |s| {
-                s.verify(self.payload.try_to_vec().unwrap())
+                s.verify(self.payload.as_bytes())
             })
     }
 }
 
-impl Display for Transaction {
+impl Display for Tx {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -123,11 +119,26 @@ impl Display for Transaction {
     }
 }
 
+impl Clone for Tx {
+    fn clone(&self) -> Self {
+        Transaction {
+            signature: self.signature.clone(),
+            payload: self.payload.clone(),
+        }
+    }
+}
+
+impl PartialEq for Tx {
+    fn eq(&self, other: &Self) -> bool {
+        self.payload == other.payload && self.signature == other.signature
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
-    use spaceframe_crypto::ed25519::Ed25519KeyPair;
+    use spaceframe_crypto::ed25519::{Ed25519KeyPair, Ed25519Signature};
 
     fn setup() -> (TransactionPayload, Ed25519KeyPair, Ed25519KeyPair) {
         let keypair_1 = Ed25519KeyPair::generate();
@@ -150,7 +161,7 @@ mod tests {
         let keypair = Ed25519KeyPair::generate();
         let keypair_2 = Ed25519KeyPair::generate();
 
-        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2);
+        let tx = Tx::new(&keypair, &Address::from(keypair_2.public), 13, 2);
         assert!(tx.is_ok());
     }
 
@@ -159,21 +170,21 @@ mod tests {
         let keypair = Ed25519KeyPair::generate();
         let keypair_2 = Ed25519KeyPair::generate();
 
-        let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 0, 0);
+        let tx = Tx::new(&keypair, &Address::from(keypair_2.public), 0, 0);
         assert!(tx.is_err());
     }
 
     #[test]
     fn test_new_transaction_self() {
         let keypair = Ed25519KeyPair::generate();
-        let tx = Transaction::new(&keypair, &Address::from(keypair.public), 12, 1);
+        let tx = Tx::new(&keypair, &Address::from(keypair.public), 12, 1);
         assert!(tx.is_err());
     }
 
     #[test]
     fn test_verify_no_signature() {
         let keypair = Ed25519KeyPair::generate();
-        let tx = Transaction::genesis(&Address::from(keypair.public), 1234);
+        let tx = Tx::genesis(&Address::from(keypair.public), 1234);
         assert!(tx.verify().is_err());
     }
 
