@@ -4,7 +4,7 @@ use crate::account::Address;
 use crate::block::Block;
 use crate::errors::{LedgerError, Result};
 use crate::transaction::Transaction;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Ledger {

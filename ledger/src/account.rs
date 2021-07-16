@@ -1,4 +1,3 @@
-use base58::ToBase58;
 use ed25519_dalek::PublicKey;
 use spaceframe_crypto::hash::Hash;
 use std::convert::TryFrom;
@@ -18,7 +17,7 @@ impl Address {
     pub const ADDRESS_LENGTH: usize = 22;
 
     pub fn to_string(&self) -> String {
-        format!("SF_{}", self.0.to_base58())
+        format!("SF_{}", bs58::encode(self.0).into_string())
     }
 }
 
