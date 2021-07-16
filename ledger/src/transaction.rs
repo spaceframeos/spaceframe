@@ -5,7 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use spaceframe_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519Signature};
-use spaceframe_crypto::traits::PublicKey;
+use spaceframe_crypto::traits::{Keypair, PublicKey};
 use std::fmt::{Display, Formatter};
 
 const CONTEXT: &[u8] = b"SpaceframeTxnSigning";

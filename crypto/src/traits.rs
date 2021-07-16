@@ -1,5 +1,25 @@
 use ed25519_dalek::SignatureError;
 
+pub trait Keypair {
+    type PublicKeyType;
+    type PrivateKeyType;
+    type SignatureType;
+
+    fn generate() -> Self;
+
+    fn sign<T>(
+        &self,
+        message: T,
+        context: Option<&[u8]>,
+    ) -> Result<Self::SignatureType, SignatureError>
+    where
+        T: AsRef<[u8]>;
+
+    fn public_key(&self) -> Self::PublicKeyType;
+
+    fn private_key(&self) -> &Self::PrivateKeyType;
+}
+
 pub trait PrivateKey {
     type SignatureType: Signature;
     type PublicKeyType: PublicKey;
@@ -32,3 +52,10 @@ pub trait PublicKey {
 }
 
 pub trait Signature {}
+
+pub trait CryptoSuit {
+    type Keypair: Keypair;
+    type PubKey: PublicKey;
+    type PrivKey: PrivateKey;
+    type Signature: Signature;
+}

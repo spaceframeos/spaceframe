@@ -1,6 +1,6 @@
-use crate::traits::{PrivateKey, PublicKey, Signature};
+use crate::traits::{CryptoSuit, Keypair, PrivateKey, PublicKey, Signature};
 use ed25519_dalek::PublicKey as DalekPublicKey;
-use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
+use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
 use ed25519_dalek::{ExpandedSecretKey, SecretKey as DalekPrivateKey, Signature as DalekSignature};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -11,24 +11,36 @@ pub struct Ed25519KeyPair {
     pub private: Ed25519PrivateKey,
 }
 
-impl Ed25519KeyPair {
-    pub fn generate() -> Self {
-        let keypair = Keypair::generate(&mut OsRng);
+impl Keypair for Ed25519KeyPair {
+    type PublicKeyType = Ed25519PublicKey;
+    type PrivateKeyType = Ed25519PrivateKey;
+    type SignatureType = Ed25519Signature;
+
+    fn generate() -> Self {
+        let keypair = DalekKeypair::generate(&mut OsRng);
         Ed25519KeyPair {
             public: Ed25519PublicKey(keypair.public),
             private: Ed25519PrivateKey(keypair.secret),
         }
     }
 
-    pub fn sign<T>(
+    fn sign<T>(
         &self,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<Ed25519Signature, SignatureError>
+    ) -> Result<Self::SignatureType, SignatureError>
     where
         T: AsRef<[u8]>,
     {
         self.private.sign(message, context, self.public)
+    }
+
+    fn public_key(&self) -> Self::PublicKeyType {
+        self.public
+    }
+
+    fn private_key(&self) -> &Self::PrivateKeyType {
+        &self.private
     }
 }
 
@@ -97,3 +109,12 @@ impl Ed25519Signature {
 }
 
 impl Signature for Ed25519Signature {}
+
+struct Ed25519CryptoSuit;
+
+impl CryptoSuit for Ed25519CryptoSuit {
+    type Keypair = Ed25519KeyPair;
+    type PubKey = Ed25519PublicKey;
+    type PrivKey = Ed25519PrivateKey;
+    type Signature = Ed25519Signature;
+}
