@@ -8,9 +8,3 @@ edition = "2018"
 
 [dependencies]
 spaceframe-ledger = { path="../ledger" }
-borsh = "0.9.1"
-prost = "0.8"
-prost-types = "0.8"
-
-[build-dependencies]
-prost-build = "0.8"

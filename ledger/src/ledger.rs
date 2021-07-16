@@ -1,12 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::account::Address;
 use crate::block::Block;
 use crate::errors::{LedgerError, Result};
 use crate::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct Ledger {
     blockchain: Vec<Block>,
 }
@@ -151,8 +150,7 @@ impl Ledger {
 mod tests {
     use super::*;
     use crate::account::Address;
-    use ed25519_dalek::Keypair;
-    use rand::rngs::OsRng;
+    use spaceframe_crypto::ed25519::Ed25519KeyPair;
 
     #[test]
     fn test_new_ledger() {
@@ -163,9 +161,8 @@ mod tests {
 
     #[test]
     fn test_new_with_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
-        let mut ledger = Ledger::new(&[
+        let keypair_2 = Ed25519KeyPair::generate();
+        let ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(keypair_2.public), 13),
             Transaction::genesis(&Address::from(keypair_2.public), 15),
             Transaction::genesis(&Address::from(keypair_2.public), 12),
@@ -175,9 +172,9 @@ mod tests {
 
     #[test]
     fn test_new_with_invalid_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
-        let mut ledger = Ledger::new(&[
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
+        let ledger = Ledger::new(&[
             Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2).unwrap(),
             Transaction::new(&keypair, &Address::from(keypair_2.public), 15, 3).unwrap(),
             Transaction::new(&keypair, &Address::from(keypair_2.public), 12, 1).unwrap(),
@@ -187,8 +184,7 @@ mod tests {
 
     #[test]
     fn test_add_empty_block() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair_2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(keypair_2.public), 13),
             Transaction::genesis(&Address::from(keypair_2.public), 15),
@@ -202,8 +198,8 @@ mod tests {
 
     #[test]
     fn test_balance_genesis() {
-        let user1: Keypair = Keypair::generate(&mut OsRng);
-        let mut ledger = Ledger::new(&[
+        let user1 = Ed25519KeyPair::generate();
+        let ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(user1.public), 13),
             Transaction::genesis(&Address::from(user1.public), 15),
             Transaction::genesis(&Address::from(user1.public), 12),
@@ -218,8 +214,8 @@ mod tests {
 
     #[test]
     fn test_balance_with_transactions() {
-        let user1: Keypair = Keypair::generate(&mut OsRng);
-        let user2: Keypair = Keypair::generate(&mut OsRng);
+        let user1 = Ed25519KeyPair::generate();
+        let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(user1.public), 13),
             Transaction::genesis(&Address::from(user2.public), 15),
@@ -248,8 +244,8 @@ mod tests {
 
     #[test]
     fn test_balance_with_more_transactions() {
-        let user1: Keypair = Keypair::generate(&mut OsRng);
-        let user2: Keypair = Keypair::generate(&mut OsRng);
+        let user1 = Ed25519KeyPair::generate();
+        let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(user1.public), 13),
             Transaction::genesis(&Address::from(user2.public), 15),
@@ -286,8 +282,8 @@ mod tests {
 
     #[test]
     fn test_add_block_invalid_balance() {
-        let user1: Keypair = Keypair::generate(&mut OsRng);
-        let user2: Keypair = Keypair::generate(&mut OsRng);
+        let user1 = Ed25519KeyPair::generate();
+        let user2 = Ed25519KeyPair::generate();
         let mut ledger = Ledger::new(&[
             Transaction::genesis(&Address::from(user1.public), 13),
             Transaction::genesis(&Address::from(user2.public), 15),

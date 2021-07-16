@@ -1,14 +1,16 @@
 use crate::account::Address;
 use crate::errors::LedgerError;
 use crate::errors::Result;
+use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
-use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature};
 use serde::{Deserialize, Serialize};
+use spaceframe_crypto::ed25519::{Ed25519KeyPair, Ed25519PublicKey, Ed25519Signature};
+use spaceframe_crypto::traits::PublicKey;
 use std::fmt::{Display, Formatter};
 
 const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Deserialize, Serialize, PartialEq, Clone, Debug)]
 pub struct TransactionPayload {
     pub timestamp: i64,
     pub to_address: Address,
@@ -17,19 +19,9 @@ pub struct TransactionPayload {
 }
 
 impl TransactionPayload {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::serialize(self).unwrap()
-    }
-
-    pub fn prehashed(&self) -> Sha512 {
-        let mut hasher = Sha512::new();
-        hasher.update(self.as_bytes());
-        hasher
-    }
-
-    pub fn finalize(self, keypair: &Keypair) -> Result<Transaction> {
+    pub fn finalize(self, keypair: &Ed25519KeyPair) -> Result<Transaction> {
         let signature = keypair
-            .sign_prehashed(self.prehashed(), Some(CONTEXT))
+            .sign(self.as_bytes(), Some(CONTEXT))
             .or(Err(LedgerError::TxSignatureError))?;
 
         Ok(Transaction {
@@ -40,15 +32,27 @@ impl TransactionPayload {
             payload: self,
         })
     }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        self.try_to_vec().unwrap()
+    }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct TransactionSignature {
-    pub pubkey: PublicKey,
-    pub signature: Signature,
+    pub pubkey: Ed25519PublicKey,
+    pub signature: Ed25519Signature,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+impl TransactionSignature {
+    pub fn verify<T: AsRef<[u8]>>(&self, data: T) -> Result<()> {
+        self.pubkey
+            .verify(&self.signature, data, Some(CONTEXT))
+            .or(Err(LedgerError::TxInvalidSignature))
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Transaction {
     pub signature: Option<TransactionSignature>,
     pub payload: TransactionPayload,
@@ -68,7 +72,7 @@ impl Transaction {
     }
 
     pub fn new(
-        keypair: &Keypair,
+        keypair: &Ed25519KeyPair,
         receiver_address: &Address,
         amount: u64,
         fee: u64,
@@ -87,19 +91,16 @@ impl Transaction {
             amount,
             fee,
         };
-        payload.finalize(keypair)
+        payload.finalize(&keypair)
     }
 
     pub fn verify(&self) -> Result<()> {
         self.signature
             .as_ref()
             .map_or(Err(LedgerError::TxNoSignature), |s| {
-                s.pubkey
-                    .verify_prehashed(self.payload.prehashed(), Some(CONTEXT), &s.signature)
-                    .or(Err(LedgerError::TxInvalidSignature))
+                s.verify(self.payload.try_to_vec().unwrap())
             })
     }
-
 }
 
 impl Display for Transaction {
@@ -126,11 +127,11 @@ impl Display for Transaction {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use rand::rngs::OsRng;
+    use spaceframe_crypto::ed25519::Ed25519KeyPair;
 
-    fn setup() -> (TransactionPayload, Keypair, Keypair) {
-        let keypair_1: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+    fn setup() -> (TransactionPayload, Ed25519KeyPair, Ed25519KeyPair) {
+        let keypair_1 = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         (
             TransactionPayload {
@@ -146,8 +147,8 @@ mod tests {
 
     #[test]
     fn test_new_transaction() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 13, 2);
         assert!(tx.is_ok());
@@ -155,8 +156,8 @@ mod tests {
 
     #[test]
     fn test_new_transaction_0_amount() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let tx = Transaction::new(&keypair, &Address::from(keypair_2.public), 0, 0);
         assert!(tx.is_err());
@@ -164,14 +165,14 @@ mod tests {
 
     #[test]
     fn test_new_transaction_self() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
         let tx = Transaction::new(&keypair, &Address::from(keypair.public), 12, 1);
         assert!(tx.is_err());
     }
 
     #[test]
     fn test_verify_no_signature() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
         let tx = Transaction::genesis(&Address::from(keypair.public), 1234);
         assert!(tx.verify().is_err());
     }
@@ -207,7 +208,7 @@ mod tests {
         let (payload, keypair_1, _) = setup();
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
-        tx.payload.to_address = Keypair::generate(&mut OsRng).public.into();
+        tx.payload.to_address = Ed25519KeyPair::generate().public.into();
         assert!(tx.verify().is_err());
     }
 
@@ -216,7 +217,7 @@ mod tests {
         let (payload, keypair_1, _) = setup();
 
         let mut tx = payload.finalize(&keypair_1).unwrap();
-        tx.signature.as_mut().unwrap().signature = Signature::new([0u8; 64]);
+        tx.signature.as_mut().unwrap().signature = Ed25519Signature::zero();
         assert!(tx.verify().is_err());
     }
 

@@ -1,8 +1,10 @@
-use ed25519_dalek::PublicKey;
 use spaceframe_crypto::hash::Hash;
 use std::convert::TryFrom;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+
+use spaceframe_crypto::traits::PublicKey;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -10,7 +12,9 @@ pub struct Account {}
 
 const VERSION: &[u8] = b"01";
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(
+    BorshSerialize, BorshDeserialize, Deserialize, Serialize, Clone, PartialEq, Eq, Hash, Debug,
+)]
 pub struct Address([u8; Address::ADDRESS_LENGTH]);
 
 impl Address {
@@ -24,7 +28,7 @@ impl Address {
 impl FromStr for Address {
     type Err = Box<dyn std::error::Error>;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
         todo!()
     }
 }
@@ -35,8 +39,8 @@ impl Display for Address {
     }
 }
 
-impl From<PublicKey> for Address {
-    fn from(key: PublicKey) -> Self {
+impl<T: PublicKey> From<T> for Address {
+    fn from(key: T) -> Self {
         let address_bytes = key.as_bytes();
         let address_payload = &address_bytes[(address_bytes.len() - 16)..];
         let mut payload = Vec::new();
@@ -52,19 +56,18 @@ impl From<PublicKey> for Address {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::Keypair;
-    use rand::rngs::OsRng;
+    use spaceframe_crypto::ed25519::Ed25519KeyPair;
 
     #[test]
     fn test_from_pubkey() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair: Ed25519KeyPair = Ed25519KeyPair::generate();
         let address: Address = keypair.public.into();
         assert_eq!(address.0.len(), Address::ADDRESS_LENGTH);
     }
 
     #[test]
     fn test_to_string() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair: Ed25519KeyPair = Ed25519KeyPair::generate();
         let address: Address = keypair.public.into();
         println!("{}", address.to_string());
     }

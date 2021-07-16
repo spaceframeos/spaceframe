@@ -1,11 +1,10 @@
-use serde::{Deserialize, Serialize};
-
 use crate::errors::{LedgerError, Result};
 use crate::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
 pub struct Block {
     pub height: u64,
     pub hash: Vec<u8>,
@@ -148,8 +147,7 @@ struct BlockHash {
 mod tests {
     use super::*;
     use crate::account::Address;
-    use ed25519_dalek::Keypair;
-    use rand::rngs::OsRng;
+    use spaceframe_crypto::ed25519::Ed25519KeyPair;
 
     #[test]
     fn test_new_genesis_no_transaction() {
@@ -162,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_new_genesis_with_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
         let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
         let genesis = Block::genesis(&initial_transactions).unwrap();
         assert!(genesis.merkle_root.is_some());
@@ -179,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_verify_genesis_with_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
         let initial_transactions = vec![Transaction::genesis(&Address::from(keypair.public), 1234)];
         let genesis = Block::genesis(&initial_transactions).unwrap();
         let res = genesis.verify();
@@ -200,8 +198,8 @@ mod tests {
 
     #[test]
     fn test_new_with_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let block = Block::new(
             2,
@@ -217,8 +215,8 @@ mod tests {
 
     #[test]
     fn test_new_with_invalid_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let block = Block::new(
             2,
@@ -241,8 +239,8 @@ mod tests {
 
     #[test]
     fn test_verify_with_transactions() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let blk = Block::new(
             12,
@@ -261,8 +259,8 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_hash() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let mut blk = Block::new(
             12,
@@ -283,8 +281,8 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_merkle_root() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let mut blk = Block::new(
             12,
@@ -305,8 +303,8 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_transaction() {
-        let keypair: Keypair = Keypair::generate(&mut OsRng);
-        let keypair_2: Keypair = Keypair::generate(&mut OsRng);
+        let keypair = Ed25519KeyPair::generate();
+        let keypair_2 = Ed25519KeyPair::generate();
 
         let mut blk = Block::new(
             12,
