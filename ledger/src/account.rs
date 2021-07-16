@@ -2,7 +2,6 @@ use spaceframe_crypto::hash::Hash;
 use std::convert::TryFrom;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 
 use spaceframe_crypto::traits::PublicKey;
 use std::fmt::{Display, Formatter};
@@ -12,9 +11,7 @@ pub struct Account {}
 
 const VERSION: &[u8] = b"01";
 
-#[derive(
-    BorshSerialize, BorshDeserialize, Deserialize, Serialize, Clone, PartialEq, Eq, Hash, Debug,
-)]
+#[derive(BorshSerialize, BorshDeserialize, Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Address([u8; Address::ADDRESS_LENGTH]);
 
 impl Address {

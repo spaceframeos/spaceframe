@@ -1,7 +1,8 @@
 use crate::account::Address;
 use crate::block::Block;
-use crate::errors::{LedgerError, Result};
+use crate::errors::{BlockError, LedgerError};
 use crate::transaction::Tx;
+use anyhow::Result;
 use std::collections::HashMap;
 
 #[derive(PartialEq, Debug)]
@@ -45,12 +46,12 @@ impl Ledger {
     pub fn add_block(&mut self, block: Block) -> Result<()> {
         let next_height = self.get_current_height() + 1;
         if block.height != next_height {
-            return Err(LedgerError::BlockInvalidHeight);
+            return Err(BlockError::BlockInvalidHeight.into());
         }
         if block.previous_block_hash.is_none()
             || block.previous_block_hash.as_deref().unwrap() != self.blockchain.last().unwrap().hash
         {
-            return Err(LedgerError::ChainInvalidHashes);
+            return Err(LedgerError::ChainInvalidHashes.into());
         }
 
         self.check_transactions_balance(&block)?;
@@ -69,7 +70,7 @@ impl Ledger {
             .as_slice();
 
         if previous_hash.is_empty() {
-            return Err(LedgerError::ChainInvalidHashes);
+            return Err(LedgerError::ChainInvalidHashes.into());
         }
 
         let blk = Block::new(next_height, transactions, previous_hash)?;
@@ -96,7 +97,7 @@ impl Ledger {
         }
 
         if balances.iter().any(|a| a.1 < &0i128) {
-            return Err(LedgerError::LedgerBalanceError);
+            return Err(LedgerError::LedgerBalanceError(None).into());
         }
 
         Ok(())
@@ -133,7 +134,7 @@ impl Ledger {
             if balance >= outcome {
                 balance -= outcome;
             } else {
-                return Err(LedgerError::LedgerBalanceError);
+                return Err(LedgerError::LedgerBalanceError(Some(*address)).into());
             }
         }
 

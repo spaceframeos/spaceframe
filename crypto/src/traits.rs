@@ -1,4 +1,4 @@
-use ed25519_dalek::SignatureError;
+use crate::error::Result;
 use std::fmt::Debug;
 
 pub trait Keypair: Debug {
@@ -11,7 +11,7 @@ pub trait Keypair: Debug {
         &self,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<<<Self as Keypair>::PublicKeyType as PublicKey>::SignatureType, SignatureError>
+    ) -> Result<<Self::PublicKeyType as PublicKey>::SignatureType>
     where
         T: AsRef<[u8]>;
 
@@ -21,7 +21,6 @@ pub trait Keypair: Debug {
 }
 
 pub trait PrivateKey: Debug {
-    type SignatureType: Signature;
     type PublicKeyType: PublicKey;
 
     fn public_key(&self) -> Self::PublicKeyType;
@@ -31,7 +30,7 @@ pub trait PrivateKey: Debug {
         message: T,
         context: Option<&[u8]>,
         public_key: Self::PublicKeyType,
-    ) -> Result<Self::SignatureType, SignatureError>
+    ) -> Result<<Self::PublicKeyType as PublicKey>::SignatureType>
     where
         T: AsRef<[u8]>;
 
@@ -46,7 +45,7 @@ pub trait PublicKey: Copy + Clone + PartialEq + Debug {
         signature: &Self::SignatureType,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<(), SignatureError>;
+    ) -> Result<()>;
 
     fn as_bytes(&self) -> &[u8];
 }

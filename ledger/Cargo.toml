@@ -15,5 +15,6 @@ bs58 = "0.4.0"
 rand = "0.7"
 borsh = "0.9.1"
 thiserror = "1.0"
+anyhow = "1.0"
 spaceframe-crypto = { path="../crypto" }
 spaceframe-merkletree = { path = "../merkletree" }

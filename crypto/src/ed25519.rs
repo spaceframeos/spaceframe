@@ -1,6 +1,7 @@
+use crate::error::{Result, SignatureError};
 use crate::traits::{Keypair, PrivateKey, PublicKey, Signature};
 use ed25519_dalek::PublicKey as DalekPublicKey;
-use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
+use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512};
 use ed25519_dalek::{ExpandedSecretKey, SecretKey as DalekPrivateKey, Signature as DalekSignature};
 use rand::rngs::OsRng;
 
@@ -26,7 +27,7 @@ impl Keypair for Ed25519KeyPair {
         &self,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<<<Self as Keypair>::PublicKeyType as PublicKey>::SignatureType, SignatureError>
+    ) -> Result<<Self::PublicKeyType as PublicKey>::SignatureType>
     where
         T: AsRef<[u8]>,
     {
@@ -46,7 +47,6 @@ impl Keypair for Ed25519KeyPair {
 pub struct Ed25519PrivateKey(DalekPrivateKey);
 
 impl PrivateKey for Ed25519PrivateKey {
-    type SignatureType = Ed25519Signature;
     type PublicKeyType = Ed25519PublicKey;
 
     fn public_key(&self) -> Self::PublicKeyType {
@@ -58,7 +58,7 @@ impl PrivateKey for Ed25519PrivateKey {
         message: T,
         context: Option<&[u8]>,
         public_key: Self::PublicKeyType,
-    ) -> Result<Self::SignatureType, SignatureError>
+    ) -> Result<<Self::PublicKeyType as PublicKey>::SignatureType>
     where
         T: AsRef<[u8]>,
     {
@@ -66,7 +66,9 @@ impl PrivateKey for Ed25519PrivateKey {
         hasher.update(message.as_ref());
 
         let expanded: ExpandedSecretKey = (&self.0).into();
-        let signature: DalekSignature = expanded.sign_prehashed(hasher, &public_key.0, context)?;
+        let signature: DalekSignature = expanded
+            .sign_prehashed(hasher, &public_key.0, context)
+            .or(Err(SignatureError::InvalidSignature))?;
         return Ok(Ed25519Signature(signature));
     }
 
@@ -86,10 +88,12 @@ impl PublicKey for Ed25519PublicKey {
         signature: &Self::SignatureType,
         message: T,
         context: Option<&[u8]>,
-    ) -> Result<(), SignatureError> {
+    ) -> Result<()> {
         let mut hasher = Sha512::new();
         hasher.update(message.as_ref());
-        self.0.verify_prehashed(hasher, context, &signature.0)
+        self.0
+            .verify_prehashed(hasher, context, &signature.0)
+            .or(Err(SignatureError::InvalidSignature))
     }
 
     fn as_bytes(&self) -> &[u8] {

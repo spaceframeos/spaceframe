@@ -1,6 +1,6 @@
 use crate::account::Address;
-use crate::errors::LedgerError;
-use crate::errors::Result;
+use crate::errors::TransactionError;
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use spaceframe_crypto::ed25519::Ed25519KeyPair;
@@ -23,7 +23,7 @@ impl TransactionPayload {
     pub fn finalize<T: Keypair>(self, keypair: &T) -> Result<Transaction<T>> {
         let signature = keypair
             .sign(self.as_bytes(), Some(CONTEXT))
-            .or(Err(LedgerError::TxSignatureError))?;
+            .or(Err(TransactionError::TxSignatureError))?;
 
         Ok(Transaction {
             signature: Some(TransactionSignature {
@@ -49,7 +49,7 @@ impl<T: PublicKey> TransactionSignature<T> {
     pub fn verify<D: AsRef<[u8]>>(&self, data: D) -> Result<()> {
         self.pubkey
             .verify(&self.signature, data, Some(CONTEXT))
-            .or(Err(LedgerError::TxInvalidSignature))
+            .or(Err(TransactionError::TxInvalidSignature.into()))
     }
 }
 
@@ -74,11 +74,11 @@ impl<T: Keypair> Transaction<T> {
 
     pub fn new(keypair: &T, receiver_address: &Address, amount: u64, fee: u64) -> Result<Self> {
         if Address::from(keypair.public_key()) == *receiver_address {
-            return Err(LedgerError::TxSelfTransaction);
+            return Err(TransactionError::TxSelfTransaction.into());
         }
 
         if amount == 0 {
-            return Err(LedgerError::TxInvalidAmount);
+            return Err(TransactionError::TxInvalidAmount.into());
         }
 
         let payload = TransactionPayload {
@@ -93,7 +93,7 @@ impl<T: Keypair> Transaction<T> {
     pub fn verify(&self) -> Result<()> {
         self.signature
             .as_ref()
-            .map_or(Err(LedgerError::TxNoSignature), |s| {
+            .map_or(Err(TransactionError::TxNoSignature.into()), |s| {
                 s.verify(self.payload.as_bytes())
             })
     }

@@ -1,5 +1,6 @@
-use crate::errors::{LedgerError, Result};
+use crate::errors::{BlockError, TransactionError};
 use crate::transaction::Tx;
+use anyhow::Result;
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
 
@@ -16,7 +17,7 @@ impl Block {
     pub fn genesis(initial_transactions: &[Tx]) -> Result<Self> {
         for tx in initial_transactions {
             if tx.signature.is_some() {
-                return Err(LedgerError::TxSignatureError);
+                return Err(TransactionError::GenesisSigned.into());
             }
         }
 
@@ -39,7 +40,7 @@ impl Block {
     pub fn new(height: u64, transactions: &[Tx], previous_block_hash: &[u8]) -> Result<Self> {
         // Check height
         if height < 2 {
-            return Err(LedgerError::BlockInvalidHeight);
+            return Err(BlockError::BlockInvalidHeight.into());
         }
 
         // Check transactions
@@ -66,20 +67,20 @@ impl Block {
         if (self.merkle_root.is_none() && self.transactions.len() > 0)
             || (self.merkle_root.is_some() && self.transactions.len() == 0)
         {
-            return Err(LedgerError::BlockInvalid);
+            return Err(BlockError::BlockInvalid.into());
         }
 
         let hash = self.calculate_hash()?;
 
         // Check hash
         if hash.block_hash.to_vec() != self.hash {
-            return Err(LedgerError::BlockInvalid);
+            return Err(BlockError::BlockInvalid.into());
         }
 
         // Check merkle root
         if self.merkle_root.is_some() && hash.merkle_root.is_some() {
             if hash.merkle_root.unwrap().to_vec() != self.merkle_root.as_deref().unwrap() {
-                return Err(LedgerError::BlockInvalid);
+                return Err(BlockError::BlockInvalid.into());
             }
         }
 
@@ -128,7 +129,7 @@ impl Block {
 
         Ok(merkle_tree
             .root()
-            .ok_or(LedgerError::BlockEmptyMerkleRoot)?
+            .ok_or(BlockError::BlockEmptyMerkleRoot)?
             .clone())
     }
 }
