@@ -1,11 +1,14 @@
-use crate::account::Address;
-use crate::errors::TransactionError;
+use std::fmt::{Display, Formatter};
+
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
+
 use spaceframe_crypto::ed25519::Ed25519KeyPair;
 use spaceframe_crypto::traits::{Keypair, PublicKey};
-use std::fmt::{Display, Formatter};
+
+use crate::account::Address;
+use crate::error::TransactionError;
 
 const CONTEXT: &[u8] = b"SpaceframeTxnSigning";
 
@@ -39,7 +42,7 @@ impl TransactionPayload {
     }
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, PartialEq, Clone, Debug)]
 pub struct TransactionSignature<T: PublicKey> {
     pub pubkey: T,
     pub signature: T::SignatureType,
@@ -53,7 +56,7 @@ impl<T: PublicKey> TransactionSignature<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct Transaction<T: Keypair> {
     pub signature: Option<TransactionSignature<T::PublicKeyType>>,
     pub payload: TransactionPayload,
@@ -136,9 +139,11 @@ impl PartialEq for Tx {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
+
     use spaceframe_crypto::ed25519::{Ed25519KeyPair, Ed25519Signature};
+
+    use super::*;
 
     fn setup() -> (TransactionPayload, Ed25519KeyPair, Ed25519KeyPair) {
         let keypair_1 = Ed25519KeyPair::generate();

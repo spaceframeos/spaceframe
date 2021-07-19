@@ -1,13 +1,16 @@
 use crate::account::Address;
-use crate::block::Block;
-use crate::errors::{BlockError, LedgerError};
+use crate::block::Block as Blk;
+use crate::error::{BlockError, LedgerError};
+use crate::proof::PoSpaceProof;
 use crate::transaction::Tx;
 use anyhow::Result;
 use std::collections::HashMap;
 
+pub type Block = Blk<PoSpaceProof>;
+
 #[derive(PartialEq, Debug)]
 pub struct Ledger {
-    blockchain: Vec<Block>,
+    pub blockchain: Vec<Block>,
 }
 
 impl Ledger {
@@ -73,7 +76,7 @@ impl Ledger {
             return Err(LedgerError::ChainInvalidHashes.into());
         }
 
-        let blk = Block::new(next_height, transactions, previous_hash)?;
+        let blk = Block::new(next_height, transactions, previous_hash, None)?;
         self.check_transactions_balance(&blk)?;
 
         self.blockchain.push(blk);

@@ -1,4 +1,5 @@
 use crate::error::Result;
+use borsh::{BorshDeserialize, BorshSerialize};
 use std::fmt::Debug;
 
 pub trait Keypair: Debug {
@@ -37,7 +38,7 @@ pub trait PrivateKey: Debug {
     fn as_bytes(&self) -> &[u8];
 }
 
-pub trait PublicKey: Copy + Clone + PartialEq + Debug {
+pub trait PublicKey: BorshSerialize + BorshDeserialize + Copy + Clone + PartialEq + Debug {
     type SignatureType: Signature;
 
     fn verify<T: AsRef<[u8]>>(
@@ -50,4 +51,4 @@ pub trait PublicKey: Copy + Clone + PartialEq + Debug {
     fn as_bytes(&self) -> &[u8];
 }
 
-pub trait Signature: Clone + PartialEq + Debug {}
+pub trait Signature: BorshSerialize + BorshDeserialize + Clone + PartialEq + Debug {}

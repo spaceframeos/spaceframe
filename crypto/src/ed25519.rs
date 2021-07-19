@@ -1,9 +1,13 @@
 use crate::error::{Result, SignatureError};
 use crate::traits::{Keypair, PrivateKey, PublicKey, Signature};
-use ed25519_dalek::PublicKey as DalekPublicKey;
+use borsh::{BorshDeserialize, BorshSerialize};
+use ed25519_dalek::ed25519::signature::Signature as DalekSignatureTrait;
+use ed25519_dalek::ed25519::SIGNATURE_LENGTH;
 use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512};
 use ed25519_dalek::{ExpandedSecretKey, SecretKey as DalekPrivateKey, Signature as DalekSignature};
+use ed25519_dalek::{PublicKey as DalekPublicKey, PUBLIC_KEY_LENGTH};
 use rand::rngs::OsRng;
+use std::io::{Error, ErrorKind, Write};
 
 #[derive(Debug)]
 pub struct Ed25519KeyPair {
@@ -101,6 +105,24 @@ impl PublicKey for Ed25519PublicKey {
     }
 }
 
+impl BorshSerialize for Ed25519PublicKey {
+    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(self.0.as_bytes())
+    }
+}
+
+impl BorshDeserialize for Ed25519PublicKey {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        let bytes = &buf[0..PUBLIC_KEY_LENGTH];
+        let key = DalekPublicKey::from_bytes(bytes).or(Err(Error::new(
+            ErrorKind::InvalidData,
+            "Could not create public key from bytes",
+        )))?;
+        *buf = &buf[PUBLIC_KEY_LENGTH..];
+        Ok(Ed25519PublicKey(key))
+    }
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub struct Ed25519Signature(DalekSignature);
 
@@ -111,3 +133,21 @@ impl Ed25519Signature {
 }
 
 impl Signature for Ed25519Signature {}
+
+impl BorshSerialize for Ed25519Signature {
+    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(self.0.as_bytes())
+    }
+}
+
+impl BorshDeserialize for Ed25519Signature {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        let bytes = &buf[0..SIGNATURE_LENGTH];
+        let signature = DalekSignature::from_bytes(bytes).or(Err(Error::new(
+            ErrorKind::InvalidData,
+            "Could not create signature key from bytes",
+        )))?;
+        *buf = &buf[SIGNATURE_LENGTH..];
+        Ok(Ed25519Signature(signature))
+    }
+}

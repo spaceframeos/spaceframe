@@ -8,3 +8,10 @@ edition = "2018"
 
 [dependencies]
 spaceframe-ledger = { path="../ledger" }
+anyhow = "1"
+thiserror ="1"
+borsh = "0.9.1"
+
+[dev-dependencies]
+tempdir = "0.3.7"
+spaceframe-crypto = { path = "../crypto" }

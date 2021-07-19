@@ -1,19 +1,22 @@
-use crate::errors::{BlockError, TransactionError};
+use crate::error::{BlockError, TransactionError};
+use crate::proof::Proof;
 use crate::transaction::Tx;
 use anyhow::Result;
+use borsh::{BorshDeserialize, BorshSerialize};
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
 
-#[derive(PartialEq, Debug)]
-pub struct Block {
+#[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
+pub struct Block<T: Proof> {
     pub height: u64,
     pub hash: Vec<u8>,
     pub previous_block_hash: Option<Vec<u8>>,
     pub transactions: Vec<Tx>,
     pub merkle_root: Option<Vec<u8>>,
+    pub proof: Option<T>,
 }
 
-impl Block {
+impl<T: Proof> Block<T> {
     pub fn genesis(initial_transactions: &[Tx]) -> Result<Self> {
         for tx in initial_transactions {
             if tx.signature.is_some() {
@@ -27,6 +30,7 @@ impl Block {
             transactions: initial_transactions.to_vec(),
             previous_block_hash: None,
             merkle_root: None,
+            proof: None,
         };
         let hashes = blk.calculate_hash()?;
         blk.hash = hashes.block_hash.to_vec();
@@ -37,7 +41,12 @@ impl Block {
         Ok(blk)
     }
 
-    pub fn new(height: u64, transactions: &[Tx], previous_block_hash: &[u8]) -> Result<Self> {
+    pub fn new(
+        height: u64,
+        transactions: &[Tx],
+        previous_block_hash: &[u8],
+        proof: Option<T>,
+    ) -> Result<Self> {
         // Check height
         if height < 2 {
             return Err(BlockError::BlockInvalidHeight.into());
@@ -54,6 +63,7 @@ impl Block {
             previous_block_hash: Some(previous_block_hash.to_vec()),
             merkle_root: None,
             hash: Vec::new(),
+            proof,
         };
 
         let block_hash = block.calculate_hash()?;
@@ -141,10 +151,15 @@ struct BlockHash {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Block as Blk;
     use crate::account::Address;
+    use crate::proof::PoSpaceProof;
+    use crate::transaction::Tx;
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
+    use spaceframe_crypto::hash::Hash;
     use spaceframe_crypto::traits::Keypair;
+
+    type Block = Blk<PoSpaceProof>;
 
     #[test]
     fn test_new_genesis_no_transaction() {
@@ -183,13 +198,13 @@ mod tests {
 
     #[test]
     fn test_new_empty() {
-        let empty = Block::new(12, &[], &Hash::zero().to_vec());
+        let empty = Block::new(12, &[], &Hash::zero().to_vec(), None);
         assert!(empty.is_ok());
     }
 
     #[test]
     fn test_new_incorrect_height() {
-        let empty = Block::new(1, &[], &Hash::zero().to_vec());
+        let empty = Block::new(1, &[], &Hash::zero().to_vec(), None);
         assert!(empty.is_err());
     }
 
@@ -206,6 +221,7 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         );
         assert!(block.is_ok());
     }
@@ -223,13 +239,14 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         );
         assert!(block.is_err());
     }
 
     #[test]
     fn test_verify_empty_block() {
-        let empty = Block::new(12, &[], &Hash::zero().to_vec()).unwrap();
+        let empty = Block::new(12, &[], &Hash::zero().to_vec(), None).unwrap();
         let res = empty.verify();
         assert!(res.is_ok());
     }
@@ -247,6 +264,7 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         )
         .unwrap();
 
@@ -267,6 +285,7 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         )
         .unwrap();
 
@@ -289,6 +308,7 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         )
         .unwrap();
 
@@ -311,6 +331,7 @@ mod tests {
                 Tx::new(&keypair, &Address::from(keypair_2.public), 12, 2).unwrap(),
             ],
             &Hash::zero().to_vec(),
+            None,
         )
         .unwrap();
 
