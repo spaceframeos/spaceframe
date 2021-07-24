@@ -1,18 +1,32 @@
 use crossbeam::channel::bounded;
-use log::{info, warn};
+use log::{debug, info, warn};
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
     path::Path,
 };
 
+use crate::storage::{deserialize, PlotEntry};
 use crate::{
     bits::BitsWrapper,
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FXCalculator,
-    storage::{sort_table_on_disk, store_table1_part, Table1Entry, ENTRIES_PER_CHUNK},
+    storage::{
+        sort_table_on_disk, store_table1_part, ENTRIES_PER_CHUNK, TABLE1_SERIALIZED_ENTRY_SIZE,
+    },
 };
+use std::fs::{read_dir, File};
+use std::io::Read;
+
+use crate::table_final_filename_format;
+use std::cmp::min;
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+struct RmapItem {
+    count: u16,
+    pos: u16,
+}
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -20,41 +34,24 @@ pub struct PoSpace {
     k: usize,
     f1_calculator: F1Calculator,
     fx_calculator: FXCalculator,
-
-    pub table1: Vec<(BitsWrapper, BitsWrapper)>,
-    pub table2: Vec<(BitsWrapper, BitsWrapper, BitsWrapper)>,
-    pub table3: Vec<(
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-    )>,
-    pub table4: Vec<(
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-        BitsWrapper,
-    )>,
+    left_targets: Vec<Vec<Vec<u16>>>,
+    rmap: Vec<RmapItem>,
+    rmap_clean: Vec<u16>,
 }
 
 impl PoSpace {
     pub fn new(k: usize, plot_seed: &[u8]) -> Self {
-        PoSpace {
+        let mut pospace = PoSpace {
             plot_seed: plot_seed.to_vec(),
             k,
             f1_calculator: F1Calculator::new(k, &plot_seed),
             fx_calculator: FXCalculator::new(k),
-            table1: Vec::new(),
-            table2: Vec::new(),
-            table3: Vec::new(),
-            table4: Vec::new(),
-        }
+            left_targets: vec![vec![vec![0u16; PARAM_M as usize]; PARAM_BC as usize]; 2],
+            rmap: vec![RmapItem { count: 4, pos: 12 }; PARAM_BC as usize],
+            rmap_clean: Vec::new(),
+        };
+        pospace.load_tables();
+        pospace
     }
 
     pub fn matching_naive(&self, l: &BitsWrapper, r: &BitsWrapper) -> bool {
@@ -99,6 +96,59 @@ impl PoSpace {
         return false;
     }
 
+    fn load_tables(&mut self) {
+        for parity in 0..2 {
+            for i in 0..PARAM_BC {
+                let ind_j = i / PARAM_C;
+                for m in 0..PARAM_M {
+                    let yr = ((ind_j + m) % PARAM_B) * PARAM_C
+                        + (((2 * m + parity) * (2 * m + parity) + i) % PARAM_C);
+                    self.left_targets[parity as usize][i as usize][m as usize] = yr as u16;
+                }
+            }
+        }
+    }
+
+    fn find_matches(
+        &mut self,
+        left_bucket: &[PlotEntry],
+        right_bucket: &[PlotEntry],
+    ) -> Vec<Match> {
+        let mut matches = Vec::new();
+        let parity = (left_bucket[0].fx / PARAM_BC) % 2;
+
+        for yl in &self.rmap_clean {
+            self.rmap[*yl as usize].count = 0;
+        }
+        self.rmap_clean.clear();
+
+        let remove = (right_bucket[0].fx / PARAM_BC) * PARAM_BC;
+        for pos_r in 0..right_bucket.len() {
+            let r_y = (right_bucket[pos_r].fx - remove) as usize;
+
+            if self.rmap[r_y].count == 0 {
+                self.rmap[r_y].pos = pos_r as u16;
+            }
+            self.rmap[r_y].count += 1;
+            self.rmap_clean.push(r_y as u16);
+        }
+
+        let remove_y = remove - PARAM_BC;
+        for pos_l in 0..left_bucket.len() {
+            let r = left_bucket[pos_l].fx - remove_y;
+            for i in 0..PARAM_M {
+                let r_target = self.left_targets[parity as usize][r as usize][i as usize];
+                for j in 0..self.rmap[r_target as usize].count {
+                    matches.push(Match {
+                        left_index: pos_l as u64,
+                        right_index: (self.rmap[r_target as usize].pos + j) as u64,
+                    });
+                }
+            }
+        }
+        return matches;
+    }
+
     pub fn run_phase_1(&mut self) {
         // Clear data folder
         match remove_dir_all("data") {
@@ -111,6 +161,8 @@ impl PoSpace {
         }
         create_dir_all("data").ok();
         info!("Data dir cleaned");
+
+        let data_path = Path::new("data");
 
         let table_size = 2u64.pow(self.k as u32);
 
@@ -134,9 +186,12 @@ impl PoSpace {
             let mut counter = 1;
 
             while let Ok(data) = receiver.recv() {
-                buffer.push(Table1Entry {
-                    x: data.1.value,
-                    y: data.0.value,
+                buffer.push(PlotEntry {
+                    fx: data.0.value,
+                    x: Some(data.1.value),
+                    position: None,
+                    offset: None,
+                    collate: None,
                 });
 
                 if buffer.len() % (1024 * 1024) == 0 {
@@ -150,23 +205,70 @@ impl PoSpace {
 
                 if buffer.len() == ENTRIES_PER_CHUNK {
                     info!("Wrinting raw data to disk ...");
-                    store_table1_part(&buffer, Path::new("data"), counter);
+                    store_table1_part(&buffer, data_path, counter);
                     counter += 1;
                     buffer.clear();
                 }
             }
 
             if buffer.len() > 0 {
-                store_table1_part(&buffer, Path::new("data"), counter);
+                store_table1_part(&buffer, data_path, counter);
             }
         });
 
         info!("Table 1 raw data written");
         info!("Starting to sort table 1 on disk ...");
 
-        sort_table_on_disk::<Table1Entry>(1, Path::new("data"), ENTRIES_PER_CHUNK);
+        sort_table_on_disk::<PlotEntry>(1, data_path, ENTRIES_PER_CHUNK);
 
         info!("Table 1 sorted on disk");
+
+        // Load part of table 1 in memory
+        info!("Calculating table 2 ...");
+
+        let mut file =
+            File::open(data_path.join(format!(table_final_filename_format!(), 1))).unwrap();
+        let number_of_entries = min(ENTRIES_PER_CHUNK, 2usize.pow(self.k as u32));
+        let mut buffer = vec![0u8; number_of_entries * *TABLE1_SERIALIZED_ENTRY_SIZE];
+        file.read_exact(&mut buffer).unwrap();
+        let data: Vec<PlotEntry> = deserialize(&buffer);
+
+        let mut bucket = 0;
+        let mut left_bucket = Vec::new();
+        let mut right_bucket = Vec::new();
+
+        for left_entry in data {
+            let y_bucket = left_entry.fx / PARAM_BC;
+            if y_bucket == bucket {
+                left_bucket.push(left_entry);
+            } else if y_bucket == bucket + 1 {
+                right_bucket.push(left_entry);
+            } else {
+                if !left_bucket.is_empty() && !right_bucket.is_empty() {
+                    // Check for matches
+                    let matches = self.find_matches(&left_bucket, &right_bucket);
+                    debug!("{} matches found", matches.len());
+                }
+
+                if y_bucket == bucket + 2 {
+                    bucket += 1;
+                    left_bucket = right_bucket.clone();
+                    right_bucket.clear();
+                    right_bucket.push(left_entry);
+                } else {
+                    bucket = y_bucket;
+                    left_bucket.clear();
+                    left_bucket.push(left_entry);
+                    right_bucket.clear();
+                }
+            }
+        }
+
+        // Check for matchs in the window
+
+        // Store matchs in table 2
+
+        // Calculate C3 collate value
 
         // Table 2
         // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
@@ -321,31 +423,24 @@ impl PoSpace {
     }
 }
 
+pub struct Match {
+    left_index: u64,
+    right_index: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    #[ignore = "outdated"]
-    fn test_plotting() {
-        let k = 12;
-        let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
-
-        let mut pos1 = PoSpace::new(k, plot_seed);
-        pos1.run_phase_1();
-        let mut pos2 = PoSpace::new(k, plot_seed);
-        pos2.run_phase_1();
-
-        for tuple in pos1.table2.iter().zip(pos2.table2.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
-        }
-
-        for tuple in pos1.table3.iter().zip(pos2.table3.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
-        }
-
-        for tuple in pos1.table4.iter().zip(pos2.table4.iter()) {
-            assert_eq!(tuple.0 .0, tuple.1 .0);
-        }
-    }
+    // #[test]
+    // #[ignore = "outdated"]
+    // fn test_plotting() {
+    //     let k = 12;
+    //     let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
+    //
+    //     let mut pos1 = PoSpace::new(k, plot_seed);
+    //     pos1.run_phase_1();
+    //     let mut pos2 = PoSpace::new(k, plot_seed);
+    //     pos2.run_phase_1();
+    // }
 }

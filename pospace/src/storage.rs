@@ -7,54 +7,81 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::bits::BitsWrapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::fs::rename;
 
 /// 1 GB per chunk
 pub const ENTRIES_PER_CHUNK: usize = 65_536 * 1024;
 
+#[macro_export]
 macro_rules! table_raw_filename_format {
     () => {
         "table{}_raw_{}"
     };
 }
 
+#[macro_export]
 macro_rules! table_sorted_filename_format {
     () => {
         "table{}_sorted_{}"
     };
 }
 
+#[macro_export]
+macro_rules! table_final_filename_format {
+    () => {
+        "table{}_final"
+    };
+}
+
 lazy_static! {
-    pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&Table1Entry {
-        x: u64::MAX,
-        y: u64::MAX
+    pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&PlotEntry {
+        fx: u64::MAX,
+        x: Some(u64::MAX),
+        position: None,
+        offset: None,
+        collate: None,
     })
     .unwrap() as usize;
 }
 
+// #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+// pub struct Table1Entry {
+//     pub x: u64,
+//     pub y: u64,
+// }
+//
+// impl Ord for Table1Entry {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.y.cmp(&other.y)
+//     }
+// }
+//
+// impl PartialOrd for Table1Entry {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(&other))
+//     }
+// }
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Table1Entry {
-    pub x: u64,
-    pub y: u64,
+pub struct PlotEntry {
+    pub fx: u64,
+    pub x: Option<u64>,
+    pub position: Option<u64>,
+    pub offset: Option<u64>,
+    pub collate: Option<u64>,
 }
 
-impl Ord for Table1Entry {
+impl Ord for PlotEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.y.cmp(&other.y)
+        self.fx.cmp(&other.fx)
     }
 }
 
-impl PartialOrd for Table1Entry {
+impl PartialOrd for PlotEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(&other))
     }
-}
-
-pub struct PlotEntry {
-    pub y: BitsWrapper,
-    pub pos: u64,
-    pub offset: u64,
 }
 
 pub fn store_table_part<T>(buffer: &[T], path: &Path)
@@ -66,7 +93,7 @@ where
     new_file.write_all(&bin_data).unwrap();
 }
 
-pub fn store_table1_part(buffer: &[Table1Entry], path: &Path, index: usize) {
+pub fn store_table1_part(buffer: &[PlotEntry], path: &Path, index: usize) {
     store_table_part(
         buffer,
         &path.join(format!(table_raw_filename_format!(), 1, index)),
@@ -116,7 +143,7 @@ where
 
 pub fn sort_table_on_disk<T>(table_index: usize, path: &Path, entries_per_chunk: usize)
 where
-    T: Serialize + DeserializeOwned + Ord,
+    T: Serialize + DeserializeOwned + Ord + Copy,
 {
     // Sort each bucket
     let mut chunks_count = 0;
@@ -148,11 +175,11 @@ where
     if chunks_count > 1 {
         info!("K-Way merging for table 1 ...");
 
-        let mut state = KWayMerge::new(
+        let mut state = KWayMerge::<T>::new(
             &parts,
             *TABLE1_SERIALIZED_ENTRY_SIZE,
             entries_per_chunk,
-            path,
+            &path.join(format!(table_final_filename_format!(), table_index)),
         );
 
         while state.run_iteration() != KWayMergeState::Done {}
@@ -161,8 +188,14 @@ where
 
         info!("{} final entries written", state.item_count);
     } else {
-        // TODO rename file to final
+        rename(
+            path.join(format!(table_sorted_filename_format!(), table_index, 1)),
+            path.join(format!(table_final_filename_format!(), table_index)),
+        )
+        .unwrap();
     }
+
+    // TODO: clean intermediate files
 }
 
 #[derive(Debug, PartialEq)]
@@ -172,22 +205,24 @@ enum KWayMergeState {
 }
 
 #[derive(Debug)]
-struct KWayMerge {
+struct KWayMerge<T> {
     entries_per_chunk: usize,
-    output_folder: PathBuf,
-    chunks: Vec<MergeChunk>,
-    output: Vec<Table1Entry>,
+    output_file: File,
+    chunks: Vec<MergeChunk<T>>,
+    output: Vec<T>,
     iter_count: usize,
     item_count: usize,
-    output_file: File,
 }
 
-impl KWayMerge {
+impl<T> KWayMerge<T>
+where
+    T: Serialize + DeserializeOwned + Ord + Copy,
+{
     pub fn new(
         paths: &[PathBuf],
         entry_size: usize,
         entries_per_chunk: usize,
-        output_folder: &Path,
+        output_file_path: &Path,
     ) -> Self {
         let chunk_size = entries_per_chunk / (paths.len() - 1) * entry_size;
         let mut state = Self {
@@ -196,8 +231,7 @@ impl KWayMerge {
             output: Vec::new(),
             iter_count: 0,
             item_count: 0,
-            output_folder: output_folder.to_owned(),
-            output_file: File::create(Path::new(output_folder).join("table1_final")).unwrap(),
+            output_file: File::create(output_file_path).unwrap(),
         };
 
         let mut id_counter = 1;
@@ -260,7 +294,7 @@ impl KWayMerge {
                 .chunks
                 .iter()
                 .map(|c| c.content[0])
-                .collect::<Vec<Table1Entry>>()
+                .collect::<Vec<T>>()
                 .iter()
                 .enumerate()
                 .min_by_key(|&(_, x)| x)
@@ -274,22 +308,27 @@ impl KWayMerge {
     fn write_output(&mut self) {
         self.iter_count += 1;
         self.item_count += self.output.len();
-        let bin_data = serialize(&self.output);
-        self.output_file.write_all(&bin_data).unwrap();
+        if !self.output.is_empty() {
+            let bin_data = serialize(&self.output);
+            self.output_file.write_all(&bin_data).unwrap();
+        }
     }
 }
 
 #[derive(Debug)]
-struct MergeChunk {
+struct MergeChunk<T> {
     id: u32,
     file: File, // TODO don't keep the file open to prevent "Too many open files" error
-    content: VecDeque<Table1Entry>,
+    content: VecDeque<T>,
     total_size: usize,
     chunk_size: usize,
     remaining_size: usize,
 }
 
-impl MergeChunk {
+impl<T> MergeChunk<T>
+where
+    T: Serialize + DeserializeOwned + Ord,
+{
     pub fn refill(&mut self) {
         if self.content.len() == 0 && self.remaining_size > 0 {
             let amount;
@@ -332,7 +371,22 @@ mod tests {
     #[test]
     fn test_store_table_part_table1() {
         let dir = TempDir::new("spaceframe_test_data").unwrap();
-        let test_data = vec![Table1Entry { x: 2, y: 3 }, Table1Entry { x: 6, y: 1 }];
+        let test_data = vec![
+            PlotEntry {
+                fx: 2,
+                x: Some(3),
+                position: None,
+                offset: None,
+                collate: None,
+            },
+            PlotEntry {
+                fx: 6,
+                x: Some(1),
+                position: None,
+                offset: None,
+                collate: None,
+            },
+        ];
         let path = dir.path().join("store_table_1");
         store_table_part(&test_data, &path);
 
@@ -341,7 +395,7 @@ mod tests {
             .unwrap()
             .read_to_end(&mut verify_buffer)
             .unwrap();
-        let verify_data: Vec<Table1Entry> = deserialize(&verify_buffer);
+        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer);
 
         assert_eq!(test_data, verify_data);
     }
