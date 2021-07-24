@@ -11,7 +11,7 @@ use crate::{
     bits::BitsWrapper,
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
-    fx_calculator::FXCalculator,
+    fx_calculator::FxCalculator,
     storage::{
         sort_table_on_disk, store_table1_part, ENTRIES_PER_CHUNK, TABLE1_SERIALIZED_ENTRY_SIZE,
     },
@@ -28,7 +28,6 @@ pub struct PoSpace {
     plot_seed: Vec<u8>,
     k: usize,
     f1_calculator: F1Calculator,
-    fx_calculator: FXCalculator,
 }
 
 impl PoSpace {
@@ -37,7 +36,6 @@ impl PoSpace {
             plot_seed: plot_seed.to_vec(),
             k,
             f1_calculator: F1Calculator::new(k, &plot_seed),
-            fx_calculator: FXCalculator::new(k),
         }
     }
 
@@ -124,6 +122,7 @@ impl PoSpace {
         let mut buffer = vec![0u8; number_of_entries * *TABLE1_SERIALIZED_ENTRY_SIZE];
         file.read_exact(&mut buffer).unwrap();
         let data: Vec<PlotEntry> = deserialize(&buffer);
+        let mut f2_calculator = FxCalculator::new(self.k, 2);
 
         let mut counter = 0;
         let mut bucket = 0;
@@ -140,7 +139,7 @@ impl PoSpace {
             } else {
                 if !left_bucket.is_empty() && !right_bucket.is_empty() {
                     // Check for matches
-                    let matches = self.fx_calculator.find_matches(&left_bucket, &right_bucket);
+                    let matches = f2_calculator.find_matches(&left_bucket, &right_bucket);
                     // if matches.len() >= 10_000 {
                     //     error!("Too many matches: {} is >= 10,000", matches.len());
                     //     panic!("Too many matches");

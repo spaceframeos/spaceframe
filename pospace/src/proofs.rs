@@ -4,7 +4,7 @@ use crate::{
     bits::BitsWrapper,
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M},
     f1_calculator::F1Calculator,
-    fx_calculator::FXCalculator,
+    fx_calculator::FxCalculator,
     Bits,
 };
 

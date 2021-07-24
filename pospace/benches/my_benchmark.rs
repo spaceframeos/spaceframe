@@ -4,7 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spaceframe_pospace::{
     bits::{from_bits, to_bits, BitsWrapper},
     core::PoSpace,
-    fx_calculator::{calculate_blake_hash, FXCalculator},
+    fx_calculator::{calculate_blake_hash, FxCalculator},
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -19,7 +19,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("calculate_f2", |b| {
-        let fx_calculator = FXCalculator::new(10);
+        let fx_calculator = FxCalculator::new(10);
         let in_a = to_bits(0xab, 10);
         let in_b = to_bits(0xcd, 10);
         let in_c = to_bits(0xef, 10);
@@ -29,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("calculate_f3", |b| {
-        let fx_calculator = FXCalculator::new(16);
+        let fx_calculator = FxCalculator::new(16);
         let in_a = to_bits(0xabcd, 16);
         let in_b = to_bits(0xcdef, 16);
         let in_c = to_bits(0x1234, 16);

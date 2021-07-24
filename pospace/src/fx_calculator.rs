@@ -1,6 +1,7 @@
 use bitvec::prelude::*;
 use log::debug;
 
+use crate::bits::from_bits;
 use crate::constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M};
 use crate::storage::PlotEntry;
 use crate::{constants::PARAM_EXT, Bits, BitsSlice};
@@ -12,18 +13,22 @@ struct RmapItem {
 }
 
 #[derive(Debug)]
-pub struct FXCalculator {
+pub struct FxCalculator {
     k: usize,
+    table_index: usize,
     f_size: usize,
     left_targets: Vec<Vec<Vec<u64>>>,
     rmap: Vec<RmapItem>,
     rmap_clean: Vec<u64>,
 }
 
-impl FXCalculator {
-    pub fn new(k: usize) -> Self {
-        let mut fx = FXCalculator {
+impl FxCalculator {
+    const COLLA_SIZE: [usize; 8] = [0, 0, 1, 2, 4, 4, 3, 2];
+
+    pub fn new(k: usize, table_index: usize) -> Self {
+        let mut fx = FxCalculator {
             k,
+            table_index,
             f_size: k + PARAM_EXT,
             left_targets: vec![vec![vec![0; PARAM_M as usize]; PARAM_BC as usize]; 2],
             rmap: vec![RmapItem { count: 0, pos: 0 }; PARAM_BC as usize],
@@ -33,17 +38,34 @@ impl FXCalculator {
         fx
     }
 
-    pub fn calculate_fn(&self, input: &[&BitsSlice], y: &BitsSlice) -> Bits {
-        let half_len = input.len() / 2;
-        let mut first_half: Bits = BitVec::new();
-        let mut last_half: Bits = BitVec::new();
-        for slice in &input[..half_len] {
-            first_half.extend_from_bitslice(slice);
+    pub fn calculate_fn(
+        &self,
+        y1: &BitsSlice,
+        left: &BitsSlice,
+        right: &BitsSlice,
+    ) -> (Bits, Bits) {
+        let mut input = Bits::new();
+        let mut c = Bits::new();
+        let mut hasher = blake3::Hasher::new();
+
+        if self.table_index < 4 {
+            c.extend_from_bitslice(left);
+            c.extend_from_bitslice(right);
         }
-        for slice in &input[half_len..] {
-            last_half.extend_from_bitslice(slice);
+
+        input.extend_from_bitslice(y1);
+        input.extend_from_bitslice(left);
+        input.extend_from_bitslice(right);
+
+        hasher.update(input.as_raw_slice());
+        let hash = hasher.finalize().as_bytes().view_bits::<Lsb0>().to_bitvec();
+        let output = hash[0..(self.k + PARAM_EXT)].to_bitvec();
+
+        if self.table_index >= 4 && self.table_index < 7 {
+            c = hash[0..(self.k * Self::COLLA_SIZE[self.table_index + 1])].to_bitvec();
         }
-        calculate_blake_hash(y, &first_half, &last_half)[..self.f_size].to_bitvec()
+
+        return (output, c);
     }
 
     fn load_tables(&mut self) {
@@ -154,17 +176,6 @@ pub struct Match {
     right_index: usize,
 }
 
-pub fn calculate_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
-    let mut hasher = blake3::Hasher::new();
-    let mut input: Bits = BitVec::new();
-    input.extend_from_bitslice(y);
-    input.extend_from_bitslice(l);
-    input.extend_from_bitslice(r);
-    hasher.update(input.as_raw_slice());
-    let hash = hasher.finalize();
-    hash.as_bytes().view_bits().to_bitvec()
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -199,6 +210,25 @@ mod tests {
             }
         }
         return false;
+    }
+
+    fn verify_fc(t: usize, k: usize, left: u64, right: u64, y1: u64, y: u64, c: Option<u64>) {
+        let sizes = [1, 2, 4, 4, 3, 2];
+        let size = sizes[(t - 2) as usize];
+        let fcalc = FxCalculator::new(k, t);
+
+        let res = fcalc.calculate_fn(
+            &to_bits(y1, k + PARAM_EXT),
+            &to_bits(left, k * size),
+            &to_bits(right, k * size),
+        );
+
+        assert_eq!(y, from_bits(&res.0));
+        assert_eq!(k + PARAM_EXT, res.0.len());
+
+        if c.is_some() {
+            assert_eq!(c.unwrap(), from_bits(&res.1));
+        }
     }
 
     #[test]
@@ -241,7 +271,7 @@ mod tests {
             }
         }
 
-        let mut f2 = FXCalculator::new(TEST_K);
+        let mut f2 = FxCalculator::new(TEST_K, 2);
         let mut total_matches = 0;
 
         for kv in &buckets {
@@ -312,5 +342,85 @@ mod tests {
             total_matches,
             (1 << TEST_K) * 2
         );
+    }
+
+    #[test]
+    fn test_fx() {
+        verify_fc(2, 16, 0x44cb, 0x204f, 0x20a61a, 0x39274C, Some(0x44CB204F));
+        verify_fc(2, 16, 0x3c5f, 0xfda9, 0x3988ec, 0x30181B, Some(0x3c5ffda9));
+        verify_fc(
+            3,
+            16,
+            0x35bf992d,
+            0x7ce42c82,
+            0x31e541,
+            0x26B38B,
+            Some(0x35bf992d7ce42c82),
+        );
+        // verify_fc(
+        //     3,
+        //     16,
+        //     0x7204e52d,
+        //     0xf1fd42a2,
+        //     0x28a188,
+        //     0x3fb0b5,
+        //     Some(0x7204e52df1fd42a2),
+        // );
+        // verify_fc(
+        //     4,
+        //     16,
+        //     0x5b6e6e307d4bedc,
+        //     0x8a9a021ea648a7dd,
+        //     0x30cb4c,
+        //     0x11ad5,
+        //     Some(0xd4bd0b144fc26138),
+        // );
+        // verify_fc(
+        //     4,
+        //     16,
+        //     0xb9d179e06c0fd4f5,
+        //     0xf06d3fef701966a0,
+        //     0x1dd5b6,
+        //     0xe69a2,
+        //     Some(0xd02115f512009d4d),
+        // );
+        // verify_fc(
+        //     5,
+        //     16,
+        //     0xc2cd789a380208a9,
+        //     0x19999e3fa46d6753,
+        //     0x25f01e,
+        //     0x1f22bd,
+        //     Some(0xabe423040a33),
+        // );
+        // verify_fc(
+        //     5,
+        //     16,
+        //     0xbe3edc0a1ef2a4f0,
+        //     0x4da98f1d3099fdf5,
+        //     0x3feb18,
+        //     0x31501e,
+        //     Some(0x7300a3a03ac5),
+        // );
+        // verify_fc(
+        //     6,
+        //     16,
+        //     0xc965815a47c5,
+        //     0xf5e008d6af57,
+        //     0x1f121a,
+        //     0x1cabbe,
+        //     Some(0xc8cc6947),
+        // );
+        // verify_fc(
+        //     6,
+        //     16,
+        //     0xd420677f6cbd,
+        //     0x5894aa2ca1af,
+        //     0x2efde9,
+        //     0xc2121,
+        //     Some(0x421bb8ec),
+        // );
+        // verify_fc(7, 16, 0x5fec898f, 0x82283d15, 0x14f410, 0x24c3c2, None);
+        // verify_fc(7, 16, 0x64ac5db9, 0x7923986, 0x590fd, 0x1c74a2, None);
     }
 }
