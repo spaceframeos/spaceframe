@@ -1,5 +1,5 @@
 use crossbeam::channel::bounded;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
@@ -19,14 +19,9 @@ use crate::{
 use std::fs::{read_dir, File};
 use std::io::Read;
 
+use crate::bits::to_bits;
 use crate::table_final_filename_format;
 use std::cmp::min;
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-struct RmapItem {
-    count: u16,
-    pos: u16,
-}
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -34,119 +29,16 @@ pub struct PoSpace {
     k: usize,
     f1_calculator: F1Calculator,
     fx_calculator: FXCalculator,
-    left_targets: Vec<Vec<Vec<u16>>>,
-    rmap: Vec<RmapItem>,
-    rmap_clean: Vec<u16>,
 }
 
 impl PoSpace {
     pub fn new(k: usize, plot_seed: &[u8]) -> Self {
-        let mut pospace = PoSpace {
+        PoSpace {
             plot_seed: plot_seed.to_vec(),
             k,
             f1_calculator: F1Calculator::new(k, &plot_seed),
             fx_calculator: FXCalculator::new(k),
-            left_targets: vec![vec![vec![0u16; PARAM_M as usize]; PARAM_BC as usize]; 2],
-            rmap: vec![RmapItem { count: 4, pos: 12 }; PARAM_BC as usize],
-            rmap_clean: Vec::new(),
-        };
-        pospace.load_tables();
-        pospace
-    }
-
-    pub fn matching_naive(&self, l: &BitsWrapper, r: &BitsWrapper) -> bool {
-        assert_eq!(
-            self.k + PARAM_EXT,
-            l.bits.len(),
-            "l must be {} bits",
-            self.k + PARAM_EXT
-        );
-        assert_eq!(
-            self.k + PARAM_EXT,
-            r.bits.len(),
-            "r must be {} bits",
-            self.k + PARAM_EXT
-        );
-
-        let k_bc = PARAM_BC as i64;
-        let k_b = PARAM_B as i64;
-        let k_c = PARAM_C as i64;
-
-        let yl = l.value as i64;
-        let yr = r.value as i64;
-
-        let bl = yl / k_bc;
-        let br = yr / k_bc;
-
-        if bl + 1 != br {
-            return false;
         }
-
-        for m in 0..PARAM_M {
-            let m = m as i64;
-            if (((yr % k_bc) / k_c - ((yl % k_bc) / k_c)) - m) % k_b == 0 {
-                let mut c_diff = 2 * m + (bl % 2);
-                c_diff *= c_diff;
-
-                if (((yr % k_bc) % k_c - ((yl % k_bc) % k_c)) - c_diff) % k_c == 0 {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    fn load_tables(&mut self) {
-        for parity in 0..2 {
-            for i in 0..PARAM_BC {
-                let ind_j = i / PARAM_C;
-                for m in 0..PARAM_M {
-                    let yr = ((ind_j + m) % PARAM_B) * PARAM_C
-                        + (((2 * m + parity) * (2 * m + parity) + i) % PARAM_C);
-                    self.left_targets[parity as usize][i as usize][m as usize] = yr as u16;
-                }
-            }
-        }
-    }
-
-    fn find_matches(
-        &mut self,
-        left_bucket: &[PlotEntry],
-        right_bucket: &[PlotEntry],
-    ) -> Vec<Match> {
-        let mut matches = Vec::new();
-        let parity = (left_bucket[0].fx / PARAM_BC) % 2;
-
-        for yl in &self.rmap_clean {
-            self.rmap[*yl as usize].count = 0;
-        }
-        self.rmap_clean.clear();
-
-        let remove = (right_bucket[0].fx / PARAM_BC) * PARAM_BC;
-        for pos_r in 0..right_bucket.len() {
-            let r_y = (right_bucket[pos_r].fx - remove) as usize;
-
-            if self.rmap[r_y].count == 0 {
-                self.rmap[r_y].pos = pos_r as u16;
-            }
-            self.rmap[r_y].count += 1;
-            self.rmap_clean.push(r_y as u16);
-        }
-
-        let remove_y = remove - PARAM_BC;
-        for pos_l in 0..left_bucket.len() {
-            let r = left_bucket[pos_l].fx - remove_y;
-            for i in 0..PARAM_M {
-                let r_target = self.left_targets[parity as usize][r as usize][i as usize];
-                for j in 0..self.rmap[r_target as usize].count {
-                    matches.push(Match {
-                        left_index: pos_l as u64,
-                        right_index: (self.rmap[r_target as usize].pos + j) as u64,
-                    });
-                }
-            }
-        }
-        return matches;
     }
 
     pub fn run_phase_1(&mut self) {
@@ -233,11 +125,13 @@ impl PoSpace {
         file.read_exact(&mut buffer).unwrap();
         let data: Vec<PlotEntry> = deserialize(&buffer);
 
+        let mut counter = 0;
         let mut bucket = 0;
         let mut left_bucket = Vec::new();
         let mut right_bucket = Vec::new();
 
         for left_entry in data {
+            // debug!("{:?}", left_entry);
             let y_bucket = left_entry.fx / PARAM_BC;
             if y_bucket == bucket {
                 left_bucket.push(left_entry);
@@ -246,8 +140,31 @@ impl PoSpace {
             } else {
                 if !left_bucket.is_empty() && !right_bucket.is_empty() {
                     // Check for matches
-                    let matches = self.find_matches(&left_bucket, &right_bucket);
-                    debug!("{} matches found", matches.len());
+                    let matches = self.fx_calculator.find_matches(&left_bucket, &right_bucket);
+                    // if matches.len() >= 10_000 {
+                    //     error!("Too many matches: {} is >= 10,000", matches.len());
+                    //     panic!("Too many matches");
+                    // }
+                    // debug!("{} matches found", matches.len());
+                    // if matches.len() >= 3 {
+                    //     debug!("{:?}", matches[0]);
+                    //     debug!("{:?}", matches[1]);
+                    //     debug!("{:?}", matches[2]);
+                    // }
+                    counter += matches.len();
+
+                    // for match_item in matches {
+                    // let left_entry = &left_bucket[match_item.left_index];
+                    // let right_entry = &right_bucket[match_item.right_index];
+                    //
+                    // let f_output = self.fx_calculator.calculate_fn(
+                    //     &[
+                    //         &to_bits(left_entry.x.unwrap(), self.k),
+                    //         &to_bits(right_entry.x.unwrap(), self.k),
+                    //     ],
+                    //     &to_bits(left_entry.fx, self.k + PARAM_EXT),
+                    // );
+                    // }
                 }
 
                 if y_bucket == bucket + 2 {
@@ -263,6 +180,12 @@ impl PoSpace {
                 }
             }
         }
+
+        info!(
+            "{} matches found in total ({:.3}%)",
+            counter,
+            (counter as f64 / table_size as f64) * 100.0
+        );
 
         // Check for matchs in the window
 
@@ -421,11 +344,6 @@ impl PoSpace {
         // println!("{:?}\n", self.table3);
         // println!("{:?}", self.table4);
     }
-}
-
-pub struct Match {
-    left_index: u64,
-    right_index: u64,
 }
 
 #[cfg(test)]

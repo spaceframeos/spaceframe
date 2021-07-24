@@ -1,19 +1,36 @@
 use bitvec::prelude::*;
+use log::debug;
 
+use crate::constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M};
+use crate::storage::PlotEntry;
 use crate::{constants::PARAM_EXT, Bits, BitsSlice};
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+struct RmapItem {
+    count: u64,
+    pos: u64,
+}
 
 #[derive(Debug)]
 pub struct FXCalculator {
     k: usize,
     f_size: usize,
+    left_targets: Vec<Vec<Vec<u64>>>,
+    rmap: Vec<RmapItem>,
+    rmap_clean: Vec<u64>,
 }
 
 impl FXCalculator {
     pub fn new(k: usize) -> Self {
-        FXCalculator {
+        let mut fx = FXCalculator {
             k,
             f_size: k + PARAM_EXT,
-        }
+            left_targets: vec![vec![vec![0; PARAM_M as usize]; PARAM_BC as usize]; 2],
+            rmap: vec![RmapItem { count: 0, pos: 0 }; PARAM_BC as usize],
+            rmap_clean: vec![],
+        };
+        fx.load_tables();
+        fx
     }
 
     pub fn calculate_fn(&self, input: &[&BitsSlice], y: &BitsSlice) -> Bits {
@@ -27,6 +44,60 @@ impl FXCalculator {
             last_half.extend_from_bitslice(slice);
         }
         calculate_blake_hash(y, &first_half, &last_half)[..self.f_size].to_bitvec()
+    }
+
+    fn load_tables(&mut self) {
+        for parity in 0..2 {
+            for i in 0..PARAM_BC {
+                let ind_j = i / PARAM_C;
+                for m in 0..PARAM_M {
+                    let yr = ((ind_j + m) % PARAM_B) * PARAM_C
+                        + (((2 * m + parity) * (2 * m + parity) + i) % PARAM_C);
+                    self.left_targets[parity as usize][i as usize][m as usize] = yr;
+                }
+            }
+        }
+    }
+
+    pub fn find_matches(
+        &mut self,
+        left_bucket: &[PlotEntry],
+        right_bucket: &[PlotEntry],
+    ) -> Vec<Match> {
+        let mut matches = Vec::new();
+        let parity = (left_bucket[0].fx / PARAM_BC) % 2;
+
+        for yl in &self.rmap_clean {
+            self.rmap[*yl as usize].count = 0;
+        }
+        self.rmap_clean.clear();
+
+        let remove = (right_bucket[0].fx / PARAM_BC) * PARAM_BC;
+        for pos_r in 0..right_bucket.len() {
+            let r_y = (right_bucket[pos_r].fx - remove) as usize;
+
+            if self.rmap[r_y].count == 0 {
+                self.rmap[r_y].pos = pos_r as u64;
+            }
+
+            self.rmap[r_y].count += 1;
+            self.rmap_clean.push(r_y as u64);
+        }
+
+        let remove_y = remove - PARAM_BC;
+        for pos_l in 0..left_bucket.len() {
+            let r = left_bucket[pos_l].fx - remove_y;
+            for i in 0..PARAM_M {
+                let r_target = self.left_targets[parity as usize][r as usize][i as usize];
+                for j in 0..self.rmap[r_target as usize].count {
+                    matches.push(Match {
+                        left_index: pos_l,
+                        right_index: (self.rmap[r_target as usize].pos + j) as usize,
+                    });
+                }
+            }
+        }
+        return matches;
     }
 
     // pub fn collate_n(&self, input: &[&BitsSlice]) -> Result<Bits, ()> {
@@ -77,6 +148,12 @@ impl FXCalculator {
     // }
 }
 
+#[derive(Debug)]
+pub struct Match {
+    left_index: usize,
+    right_index: usize,
+}
+
 pub fn calculate_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits {
     let mut hasher = blake3::Hasher::new();
     let mut input: Bits = BitVec::new();
@@ -88,31 +165,152 @@ pub fn calculate_blake_hash(y: &BitsSlice, l: &BitsSlice, r: &BitsSlice) -> Bits
     hash.as_bytes().view_bits().to_bitvec()
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::utils::{from_bits, to_bits};
+#[cfg(test)]
+mod tests {
 
-//     use super::*;
-//     use rstest::rstest;
+    use super::*;
+    use crate::bits::{from_bits, to_bits, BitsWrapper};
+    use crate::f1_calculator::F1Calculator;
+    use std::collections::{BTreeMap, HashMap};
 
-//     #[ignore]
-//     #[rstest]
-//     #[case(2, 16, 0xa, 0x204f, 0x20a61a, 0x2af546, 0x44cb204f)]
-//     fn verify_functions(
-//         #[case] t: u8,
-//         #[case] k: u64,
-//         #[case] L: u64,
-//         #[case] R: u64,
-//         #[case] y1: u64,
-//         #[case] y: u64,
-//         #[case] c: u64,
-//     ) {
-//         let y1 = to_bits(y1, k as usize + 6);
-//         let L = to_bits(L, k as usize);
-//         let R = to_bits(R, k as usize);
-//         let res = &calculate_blake_hash(&y1, &L, &R)[..k as usize + PARAM_EXT];
-//         println!("{}", &res[..k as usize + 6]);
-//         println!("{}", y);
-//         assert_eq!(from_bits(&res), y);
-//     }
-// }
+    fn matching_naive(l: u64, r: u64) -> bool {
+        let k_bc = PARAM_BC as i128;
+        let k_b = PARAM_B as i128;
+        let k_c = PARAM_C as i128;
+
+        let yl = l as i128;
+        let yr = r as i128;
+
+        let bl = yl / k_bc;
+        let br = yr / k_bc;
+
+        if bl + 1 != br {
+            return false;
+        }
+
+        for m in 0i128..PARAM_M as i128 {
+            if (((yr % k_bc) / k_c - ((yl % k_bc) / k_c)) - m) % k_b == 0 {
+                let mut c_diff = 2 * m + (bl % 2);
+                c_diff *= c_diff;
+
+                if (((yr % k_bc) % k_c - ((yl % k_bc) % k_c)) - c_diff) % k_c == 0 {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    #[test]
+    fn test_matching() {
+        const TEST_K: usize = 12;
+        const NUM_BUCKETS: u64 = (1u64 << (TEST_K + PARAM_EXT)) / PARAM_BC + 1;
+        let test_key: [u8; 32] = [
+            20, 2, 5, 4, 51, 52, 23, 84, 91, 10, 111, 12, 13, 24, 151, 16, 228, 211, 254, 45, 92,
+            198, 204, 10, 9, 10, 11, 129, 139, 171, 15, 18,
+        ];
+        let f1 = F1Calculator::new(TEST_K, &test_key);
+        let mut x: u64 = 0;
+        let mut buckets = BTreeMap::new();
+
+        for _ in 0..((1u64 << (TEST_K - 4)) + 1) {
+            let mut y = [0; 1 << 4];
+
+            for i in 0..(1 << 4) {
+                y[i as usize] = from_bits(
+                    &f1.calculate_f1(&BitsWrapper::from(x * (1 << 4) + i as u64, TEST_K)),
+                );
+            }
+
+            for i in 0..(1 << 4) {
+                let bucket = y[i] / PARAM_BC;
+                if !buckets.contains_key(&bucket) {
+                    buckets.insert(bucket, vec![]);
+                }
+                buckets
+                    .get_mut(&bucket)
+                    .unwrap()
+                    .push((to_bits(y[i], TEST_K + PARAM_EXT), to_bits(x, TEST_K)));
+                if x + 1 > (1u64 << TEST_K) - 1 {
+                    break;
+                }
+                x += 1;
+            }
+            if x + 1 > (1u64 << TEST_K) - 1 {
+                break;
+            }
+        }
+
+        let mut f2 = FXCalculator::new(TEST_K);
+        let mut total_matches = 0;
+
+        for kv in &buckets {
+            if *kv.0 == NUM_BUCKETS - 1 {
+                continue;
+            }
+            let next_bucket = buckets.get(&(kv.0 + 1)).expect("No following bucket");
+            let mut left_bucket = Vec::new();
+            let mut right_bucket = Vec::new();
+
+            for yx1 in kv.1 {
+                let e = PlotEntry {
+                    fx: from_bits(&yx1.0),
+                    x: None,
+                    position: None,
+                    offset: None,
+                    collate: None,
+                };
+                left_bucket.push(e);
+            }
+            for yx2 in next_bucket {
+                let e = PlotEntry {
+                    fx: from_bits(&yx2.0),
+                    x: None,
+                    position: None,
+                    offset: None,
+                    collate: None,
+                };
+                right_bucket.push(e);
+            }
+
+            left_bucket.sort_unstable();
+            right_bucket.sort_unstable();
+
+            println!(
+                "Bucket {}: {} --> {}",
+                kv.0,
+                left_bucket[0].fx,
+                left_bucket[left_bucket.len() - 1].fx
+            );
+            println!(
+                "Left size: {}, right size: {}",
+                left_bucket.len(),
+                right_bucket.len(),
+            );
+
+            let matches = f2.find_matches(&left_bucket, &right_bucket);
+            total_matches += matches.len();
+            for m in matches {
+                assert!(matching_naive(
+                    left_bucket[m.left_index].fx,
+                    right_bucket[m.right_index].fx,
+                ));
+            }
+        }
+
+        println!("Total matches: {}", total_matches);
+
+        assert!(
+            total_matches > (1 << TEST_K) / 2,
+            "Too few matches: {} matches found, minimum is {}",
+            total_matches,
+            (1 << TEST_K) / 2
+        );
+        assert!(
+            total_matches < (1 << TEST_K) * 2,
+            "Too many matches: {} matches found, maximum is {}",
+            total_matches,
+            (1 << TEST_K) * 2
+        );
+    }
+}

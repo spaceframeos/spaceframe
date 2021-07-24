@@ -80,7 +80,7 @@ impl Ord for PlotEntry {
 
 impl PartialOrd for PlotEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(&other).reverse())
     }
 }
 

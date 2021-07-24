@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use bitvec::prelude::*;
 
 pub mod bits;
