@@ -9,7 +9,7 @@ use std::{
 
 use crate::core::collation_size_bits;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::fs::rename;
+use std::fs::{remove_file, rename};
 
 /// 1 GB per chunk
 pub const ENTRIES_PER_CHUNK: usize = 65_536 * 1024;
@@ -177,7 +177,18 @@ where
         .unwrap();
     }
 
-    // TODO: clean intermediate files
+    info!("Removing intermediate files for table {}", table_index);
+    read_dir(path)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|x| x.path())
+        .filter(|e| {
+            let filename = e.file_name().unwrap().to_str().unwrap();
+            return e.is_file()
+                && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
+                    || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
+        })
+        .for_each(|f| remove_file(f).unwrap());
 }
 
 #[derive(Debug, PartialEq)]

@@ -23,7 +23,7 @@ use bincode::serialized_size;
 use bitvec::view::BitView;
 use std::cmp::min;
 
-const NUMBER_OF_TABLES: usize = 4;
+const NUMBER_OF_TABLES: usize = 7;
 
 #[derive(Debug)]
 pub struct PoSpace {
@@ -235,7 +235,6 @@ impl PoSpace {
             );
 
             let size = serialized_size(&buffer_to_write[0]);
-            debug!("Real serialized size{:?}", size);
 
             info!("Writing raw table {} to disk", table_index + 1);
             // TODO: make multipart writes
@@ -259,16 +258,4 @@ pub fn collation_size_bits(table_index: usize, k: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // #[test]
-    // #[ignore = "outdated"]
-    // fn test_plotting() {
-    //     let k = 12;
-    //     let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
-    //
-    //     let mut pos1 = PoSpace::new(k, plot_seed);
-    //     pos1.run_phase_1();
-    //     let mut pos2 = PoSpace::new(k, plot_seed);
-    //     pos2.run_phase_1();
-    // }
 }

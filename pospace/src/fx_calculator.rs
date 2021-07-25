@@ -121,53 +121,6 @@ impl FxCalculator {
         }
         return matches;
     }
-
-    // pub fn collate_n(&self, input: &[&BitsSlice]) -> Result<Bits, ()> {
-    //     match input.len() {
-    //         1 => {
-    //             return Ok(input[0].to_bitvec());
-    //         }
-    //         2 => {
-    //             let mut out = input[0].to_bitvec();
-    //             out.extend_from_bitslice(input[1]);
-    //             return Ok(out);
-    //         }
-    //         4 => {
-    //             let mut out = input[0].to_bitvec();
-    //             out.extend_from_bitslice(input[1]);
-    //             out.extend_from_bitslice(input[2]);
-    //             out.extend_from_bitslice(input[3]);
-    //             return Ok(out);
-    //         }
-    //         8 => {
-    //             return Ok(calculate_blake_hash(
-    //                 &self.collate_n(&input[0..4]).unwrap(),
-    //                 &self.collate_n(&input[4..8]).unwrap(),
-    //                 &self.calculate_fn(&input[0..4]),
-    //             )[self.f_size..self.f_size + 4 * self.k]
-    //                 .to_bitvec());
-    //         }
-    //         16 => {
-    //             return Ok(calculate_blake_hash(
-    //                 &self.collate_n(&input[0..8]).unwrap(),
-    //                 &self.collate_n(&input[8..16]).unwrap(),
-    //                 &self.calculate_fn(&input[0..8]),
-    //             )[self.f_size..self.f_size + 3 * self.k]
-    //                 .to_bitvec());
-    //         }
-    //         32 => {
-    //             return Ok(calculate_blake_hash(
-    //                 &self.collate_n(&input[0..16]).unwrap(),
-    //                 &self.collate_n(&input[16..32]).unwrap(),
-    //                 &self.calculate_fn(&input[0..16]),
-    //             )[self.f_size..self.f_size + 2 * self.k]
-    //                 .to_bitvec());
-    //         }
-    //         _ => {
-    //             return Err(());
-    //         }
-    //     }
-    // }
 }
 
 #[derive(Debug)]
