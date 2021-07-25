@@ -15,11 +15,12 @@ use crate::{
     storage::{sort_table_on_disk, ENTRIES_PER_CHUNK},
 };
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::bits::{from_bits, to_bits};
 use crate::table_final_filename_format;
 use bitvec::view::BitView;
+use std::fmt::Error;
 
 const NUMBER_OF_TABLES: usize = 7;
 
@@ -93,7 +94,7 @@ impl PoSpace {
                 }
 
                 if buffer.len() == ENTRIES_PER_CHUNK {
-                    info!("Wrinting raw data to disk ...");
+                    info!("Wrinting raw data to disk for table 1 ...");
                     store_raw_table_part(1, counter, &buffer, data_path);
                     counter += 1;
                     buffer.clear();
@@ -105,8 +106,6 @@ impl PoSpace {
             }
         });
 
-        info!("Table 1 raw data written");
-
         info!("Starting to sort table 1 on disk ...");
         sort_table_on_disk::<PlotEntry>(1, data_path, ENTRIES_PER_CHUNK, self.k);
         info!("Table 1 sorted on disk");
@@ -117,100 +116,128 @@ impl PoSpace {
                 data_path.join(format!(table_final_filename_format!(), table_index - 1)),
             )
             .unwrap();
+            let file_size = file.metadata().unwrap().len() as usize;
             let entry_size = plotentry_size(table_index - 1, self.k);
+            let mut remaining_size = file_size;
 
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).unwrap();
-            let data: Vec<PlotEntry> = deserialize(&buffer, entry_size);
+            assert_eq!(file_size % entry_size, 0);
 
             let mut fx_calculator = FxCalculator::new(self.k, table_index);
             let mut match_counter = 0;
             let mut bucket = 0;
             let mut pos = 0;
+            let mut part = 0;
             let mut left_bucket = Vec::new();
             let mut right_bucket = Vec::new();
             let mut buffer_to_write = Vec::new();
 
-            for mut left_entry in data {
-                left_entry.position = Some(pos);
-
-                let y_bucket = left_entry.fx / PARAM_BC;
-
-                if y_bucket == bucket {
-                    left_bucket.push(left_entry);
-                } else if y_bucket == bucket + 1 {
-                    right_bucket.push(left_entry);
+            while remaining_size > 0 {
+                let mut buffer;
+                if remaining_size > ENTRIES_PER_CHUNK * entry_size {
+                    buffer = vec![0; ENTRIES_PER_CHUNK * entry_size];
+                    file.read_exact(&mut buffer).unwrap();
+                    remaining_size -= ENTRIES_PER_CHUNK * entry_size;
                 } else {
-                    if !left_bucket.is_empty() && !right_bucket.is_empty() {
-                        // Check for matches
-                        let matches = fx_calculator.find_matches(&left_bucket, &right_bucket);
-
-                        // Sanity check
-                        if matches.len() >= 10_000 {
-                            error!("Too many matches: {} is >= 10,000", matches.len());
-                            panic!("Too many matches: {} is >= 10,000", matches.len());
-                        }
-
-                        match_counter += matches.len();
-
-                        for match_item in matches {
-                            let left_entry = &left_bucket[match_item.left_index];
-                            let right_entry = &right_bucket[match_item.right_index];
-
-                            let (left_metadata, right_metadata) = (
-                                left_entry.metadata.as_ref().unwrap().view_bits()
-                                    [..collation_size_bits(table_index, self.k)]
-                                    .to_bitvec(),
-                                right_entry.metadata.as_ref().unwrap().view_bits()
-                                    [..collation_size_bits(table_index, self.k)]
-                                    .to_bitvec(),
-                            );
-
-                            assert_eq!(
-                                left_metadata.len(),
-                                collation_size_bits(table_index, self.k)
-                            );
-                            assert_eq!(
-                                right_metadata.len(),
-                                collation_size_bits(table_index, self.k)
-                            );
-
-                            let f_output = fx_calculator.calculate_fn(
-                                &to_bits(left_entry.fx, self.k + PARAM_EXT),
-                                &left_metadata,
-                                &right_metadata,
-                            );
-
-                            assert_eq!(
-                                f_output.1.len(),
-                                collation_size_bits(table_index + 1, self.k)
-                            );
-
-                            buffer_to_write.push(PlotEntry {
-                                fx: from_bits(&f_output.0),
-                                metadata: Some(f_output.1.as_raw_slice().to_vec()),
-                                position: Some(left_entry.position.unwrap()),
-                                offset: Some(
-                                    right_entry.position.unwrap() - left_entry.position.unwrap(),
-                                ),
-                            })
-                        }
-                    }
-
-                    if y_bucket == bucket + 2 {
-                        bucket += 1;
-                        left_bucket = right_bucket.clone();
-                        right_bucket.clear();
-                        right_bucket.push(left_entry);
-                    } else {
-                        bucket = y_bucket;
-                        left_bucket.clear();
-                        left_bucket.push(left_entry);
-                        right_bucket.clear();
-                    }
+                    buffer = Vec::new();
+                    let amount = file.read_to_end(&mut buffer).unwrap();
+                    remaining_size -= amount;
                 }
 
-                pos += 1;
+                let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size);
+
+                for mut left_entry in entries {
+                    left_entry.position = Some(pos);
+
+                    let y_bucket = left_entry.fx / PARAM_BC;
+
+                    if y_bucket == bucket {
+                        left_bucket.push(left_entry);
+                    } else if y_bucket == bucket + 1 {
+                        right_bucket.push(left_entry);
+                    } else {
+                        if !left_bucket.is_empty() && !right_bucket.is_empty() {
+                            // Check for matches
+                            let matches = fx_calculator.find_matches(&left_bucket, &right_bucket);
+
+                            // Sanity check
+                            if matches.len() >= 10_000 {
+                                error!("Too many matches: {} is >= 10,000", matches.len());
+                                panic!("Too many matches: {} is >= 10,000", matches.len());
+                            }
+
+                            match_counter += matches.len();
+
+                            for match_item in matches {
+                                let left_entry = &left_bucket[match_item.left_index];
+                                let right_entry = &right_bucket[match_item.right_index];
+
+                                let (left_metadata, right_metadata) = (
+                                    left_entry.metadata.as_ref().unwrap().view_bits()
+                                        [..collation_size_bits(table_index, self.k)]
+                                        .to_bitvec(),
+                                    right_entry.metadata.as_ref().unwrap().view_bits()
+                                        [..collation_size_bits(table_index, self.k)]
+                                        .to_bitvec(),
+                                );
+
+                                assert_eq!(
+                                    left_metadata.len(),
+                                    collation_size_bits(table_index, self.k)
+                                );
+                                assert_eq!(
+                                    right_metadata.len(),
+                                    collation_size_bits(table_index, self.k)
+                                );
+
+                                let f_output = fx_calculator.calculate_fn(
+                                    &to_bits(left_entry.fx, self.k + PARAM_EXT),
+                                    &left_metadata,
+                                    &right_metadata,
+                                );
+
+                                assert_eq!(
+                                    f_output.1.len(),
+                                    collation_size_bits(table_index + 1, self.k)
+                                );
+
+                                buffer_to_write.push(PlotEntry {
+                                    fx: from_bits(&f_output.0),
+                                    metadata: Some(f_output.1.as_raw_slice().to_vec()),
+                                    position: Some(left_entry.position.unwrap()),
+                                    offset: Some(
+                                        right_entry.position.unwrap()
+                                            - left_entry.position.unwrap(),
+                                    ),
+                                })
+                            }
+                        }
+
+                        if y_bucket == bucket + 2 {
+                            bucket += 1;
+                            left_bucket = right_bucket.clone();
+                            right_bucket.clear();
+                            right_bucket.push(left_entry);
+                        } else {
+                            bucket = y_bucket;
+                            left_bucket.clear();
+                            left_bucket.push(left_entry);
+                            right_bucket.clear();
+                        }
+                    }
+
+                    pos += 1;
+                }
+
+                part += 1;
+
+                if !buffer_to_write.is_empty() {
+                    info!(
+                        "Writing raw data part {} for table {} to disk",
+                        part, table_index
+                    );
+                    store_raw_table_part(table_index, part, &buffer_to_write, data_path);
+                    buffer_to_write.clear();
+                }
 
                 if match_counter >= (table_size * 2) as usize {
                     break;
@@ -224,19 +251,9 @@ impl PoSpace {
                 table_index
             );
 
-            if !buffer_to_write.is_empty() {
-                info!("Writing raw table {} to disk", table_index);
-                // TODO: make multipart writes
-                store_raw_table_part(table_index, 1, &buffer_to_write, data_path);
-                info!("Table {} raw data written", table_index);
-
-                info!("Starting to sort table {} on disk ...", table_index);
-                sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
-                info!("Table {} sorted on disk", table_index);
-            } else {
-                error!("Not enough matches found, try with a larger k");
-                break;
-            }
+            info!("Starting to sort table {} on disk ...", table_index);
+            sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
+            info!("Table {} sorted on disk", table_index);
         }
     }
 }

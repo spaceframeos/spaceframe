@@ -12,8 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs::{remove_file, rename};
 
-/// 1 GB per chunk
-pub const ENTRIES_PER_CHUNK: usize = 65_536 * 1024;
+pub const ENTRIES_PER_CHUNK: usize = 65536 * 512;
 
 #[macro_export]
 macro_rules! table_raw_filename_format {
@@ -181,18 +180,18 @@ where
         .unwrap();
     }
 
-    info!("Removing intermediate files for table {}", table_index);
-    read_dir(path)
-        .unwrap()
-        .filter_map(Result::ok)
-        .map(|x| x.path())
-        .filter(|e| {
-            let filename = e.file_name().unwrap().to_str().unwrap();
-            return e.is_file()
-                && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
-                    || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
-        })
-        .for_each(|f| remove_file(f).unwrap());
+    // info!("Removing intermediate files for table {}", table_index);
+    // read_dir(path)
+    //     .unwrap()
+    //     .filter_map(Result::ok)
+    //     .map(|x| x.path())
+    //     .filter(|e| {
+    //         let filename = e.file_name().unwrap().to_str().unwrap();
+    //         return e.is_file()
+    //             && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
+    //                 || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
+    //     })
+    //     .for_each(|f| remove_file(f).unwrap());
 }
 
 #[derive(Debug, PartialEq)]
@@ -333,7 +332,8 @@ where
             if self.remaining_size > self.chunk_size {
                 // Read only 1 chunk
                 buffer = vec![0u8; self.chunk_size];
-                amount = self.file.read(&mut buffer).unwrap();
+                self.file.read_exact(&mut buffer).unwrap();
+                amount = self.chunk_size;
             } else {
                 // Read to the end
                 buffer = Vec::new();
