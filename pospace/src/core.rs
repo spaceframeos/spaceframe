@@ -54,7 +54,7 @@ impl PoSpace {
 
         let data_path = Path::new("data");
 
-        let table_size = 2u64.pow(self.k as u32);
+        let table_size = 1u64 << self.k;
 
         info!("Calculating table 1 ...");
 
@@ -211,6 +211,10 @@ impl PoSpace {
                 }
 
                 pos += 1;
+
+                if match_counter >= (table_size * 2) as usize {
+                    break;
+                }
             }
 
             info!(
