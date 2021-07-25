@@ -6,20 +6,20 @@ use std::{
     path::Path,
 };
 
-use crate::storage::{deserialize, PlotEntry};
+use crate::storage::{deserialize, store_raw_table_part, PlotEntry};
 use crate::{
     bits::BitsWrapper,
     constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
     f1_calculator::F1Calculator,
     fx_calculator::FxCalculator,
     storage::{
-        sort_table_on_disk, store_table1_part, ENTRIES_PER_CHUNK, TABLE1_SERIALIZED_ENTRY_SIZE,
+        sort_table_on_disk, store_table_part, ENTRIES_PER_CHUNK, TABLE1_SERIALIZED_ENTRY_SIZE,
     },
 };
 use std::fs::{read_dir, File};
 use std::io::Read;
 
-use crate::bits::to_bits;
+use crate::bits::{from_bits, to_bits};
 use crate::table_final_filename_format;
 use std::cmp::min;
 
@@ -95,14 +95,14 @@ impl PoSpace {
 
                 if buffer.len() == ENTRIES_PER_CHUNK {
                     info!("Wrinting raw data to disk ...");
-                    store_table1_part(&buffer, data_path, counter);
+                    store_raw_table_part(1, counter, &buffer, data_path);
                     counter += 1;
                     buffer.clear();
                 }
             }
 
             if buffer.len() > 0 {
-                store_table1_part(&buffer, data_path, counter);
+                store_raw_table_part(1, counter, &buffer, data_path);
             }
         });
 
@@ -124,14 +124,21 @@ impl PoSpace {
         let data: Vec<PlotEntry> = deserialize(&buffer);
         let mut f2_calculator = FxCalculator::new(self.k, 2);
 
-        let mut counter = 0;
+        let mut match_counter = 0;
         let mut bucket = 0;
         let mut left_bucket = Vec::new();
         let mut right_bucket = Vec::new();
 
-        for left_entry in data {
+        let mut buffer_to_write = Vec::new();
+
+        let mut pos = 0;
+
+        for mut left_entry in data {
             // debug!("{:?}", left_entry);
+            left_entry.position = Some(pos);
+
             let y_bucket = left_entry.fx / PARAM_BC;
+
             if y_bucket == bucket {
                 left_bucket.push(left_entry);
             } else if y_bucket == bucket + 1 {
@@ -140,30 +147,34 @@ impl PoSpace {
                 if !left_bucket.is_empty() && !right_bucket.is_empty() {
                     // Check for matches
                     let matches = f2_calculator.find_matches(&left_bucket, &right_bucket);
-                    // if matches.len() >= 10_000 {
-                    //     error!("Too many matches: {} is >= 10,000", matches.len());
-                    //     panic!("Too many matches");
-                    // }
-                    // debug!("{} matches found", matches.len());
-                    // if matches.len() >= 3 {
-                    //     debug!("{:?}", matches[0]);
-                    //     debug!("{:?}", matches[1]);
-                    //     debug!("{:?}", matches[2]);
-                    // }
-                    counter += matches.len();
 
-                    // for match_item in matches {
-                    // let left_entry = &left_bucket[match_item.left_index];
-                    // let right_entry = &right_bucket[match_item.right_index];
-                    //
-                    // let f_output = self.fx_calculator.calculate_fn(
-                    //     &[
-                    //         &to_bits(left_entry.x.unwrap(), self.k),
-                    //         &to_bits(right_entry.x.unwrap(), self.k),
-                    //     ],
-                    //     &to_bits(left_entry.fx, self.k + PARAM_EXT),
-                    // );
-                    // }
+                    // Sanity check
+                    if matches.len() >= 10_000 {
+                        error!("Too many matches: {} is >= 10,000", matches.len());
+                        panic!("Too many matches: {} is >= 10,000", matches.len());
+                    }
+
+                    match_counter += matches.len();
+
+                    for match_item in matches {
+                        let left_entry = &left_bucket[match_item.left_index];
+                        let right_entry = &right_bucket[match_item.right_index];
+
+                        let f_output = f2_calculator.calculate_fn(
+                            &to_bits(left_entry.fx, self.k + PARAM_EXT),
+                            &to_bits(left_entry.x.unwrap(), self.k),
+                            &to_bits(right_entry.x.unwrap(), self.k),
+                        );
+                        buffer_to_write.push(PlotEntry {
+                            fx: from_bits(&f_output.0),
+                            x: None,
+                            position: Some(left_entry.position.unwrap()),
+                            offset: Some(
+                                right_entry.position.unwrap() - left_entry.position.unwrap(),
+                            ),
+                            collate: Some(from_bits(&f_output.1)),
+                        })
+                    }
                 }
 
                 if y_bucket == bucket + 2 {
@@ -178,170 +189,21 @@ impl PoSpace {
                     right_bucket.clear();
                 }
             }
+
+            pos += 1;
         }
 
         info!(
             "{} matches found in total ({:.3}%)",
-            counter,
-            (counter as f64 / table_size as f64) * 100.0
+            match_counter,
+            (match_counter as f64 / table_size as f64) * 100.0
         );
 
-        // Check for matchs in the window
+        debug!("{:?}", &buffer_to_write[0..3]);
 
-        // Store matchs in table 2
-
-        // Calculate C3 collate value
-
-        // Table 2
-        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
-
-        // (0..self.table1.len())
-        //     .into_par_iter()
-        //     .for_each_with(sender, |s, i| {
-        //         for j in 0..self.table1.len() {
-        //             if i != j {
-        //                 let entry1 = &self.table1[i];
-        //                 let entry2 = &self.table1[j];
-        //                 let fx1 = &entry1.0;
-        //                 let fx2 = &entry2.0;
-        //                 if self.matching_naive(fx1, fx2) {
-        //                     let f2x = self
-        //                         .fx_calculator
-        //                         .calculate_fn(&[&entry1.1.bits, &entry2.1.bits], &fx1.bits);
-        //                     s.send((BitsWrapper::new(f2x), entry1.1.clone(), entry2.1.clone()))
-        //                         .unwrap();
-        //                 }
-        //             }
-        //         }
-        //     });
-
-        // self.table2 = receiver.iter().collect();
-        // self.table2.sort_by(|a, b| a.0.value.cmp(&b.0.value));
-
-        // println!(
-        //     "Table 2 len: {} ({:.2}%)",
-        //     self.table2.len(),
-        //     self.table2.len() as f64 / table_size as f64 * 100.0
-        // );
-
-        // // Table 3
-        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
-
-        // (0..self.table2.len())
-        //     .into_par_iter()
-        //     .for_each_with(sender, |s, i| {
-        //         for j in 0..self.table2.len() {
-        //             if i != j {
-        //                 let entry1 = &self.table2[i];
-        //                 let entry2 = &self.table2[j];
-        //                 let fx1 = &entry1.0;
-        //                 let fx2 = &entry2.0;
-
-        //                 if self.matching_naive(fx1, fx2) {
-        //                     let f2x = self.fx_calculator.calculate_fn(
-        //                         &[
-        //                             &entry1.1.bits,
-        //                             &entry1.2.bits,
-        //                             &entry2.1.bits,
-        //                             &entry2.2.bits,
-        //                         ],
-        //                         &fx1.bits,
-        //                     );
-        //                     s.send((
-        //                         BitsWrapper::new(f2x),
-        //                         entry1.1.clone(),
-        //                         entry1.2.clone(),
-        //                         entry2.1.clone(),
-        //                         entry2.2.clone(),
-        //                     ))
-        //                     .unwrap();
-        //                 }
-        //             }
-        //         }
-        //     });
-
-        // self.table3 = receiver.iter().collect();
-        // self.table3.sort_by(|a, b| a.0.value.cmp(&b.0.value));
-
-        // println!(
-        //     "Table 3 len: {} ({:.2}%)",
-        //     self.table3.len(),
-        //     self.table3.len() as f64 / table_size as f64 * 100.0
-        // );
-
-        // // Table 4
-        // let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
-
-        // (0..self.table3.len())
-        //     .into_par_iter()
-        //     .for_each_with(sender, |s, i| {
-        //         for j in 0..self.table3.len() {
-        //             if i != j {
-        //                 let entry1 = &self.table3[i];
-        //                 let entry2 = &self.table3[j];
-        //                 let fx1 = &entry1.0;
-        //                 let fx2 = &entry2.0;
-
-        //                 if self.matching_naive(fx1, fx2) {
-        //                     let f2x = self.fx_calculator.calculate_fn(
-        //                         &[
-        //                             &entry1.1.bits,
-        //                             &entry1.2.bits,
-        //                             &entry1.3.bits,
-        //                             &entry1.4.bits,
-        //                             &entry2.1.bits,
-        //                             &entry2.2.bits,
-        //                             &entry2.3.bits,
-        //                             &entry2.4.bits,
-        //                         ],
-        //                         &fx1.bits,
-        //                     );
-        //                     s.send((
-        //                         BitsWrapper::new(f2x),
-        //                         entry1.1.clone(),
-        //                         entry1.2.clone(),
-        //                         entry1.3.clone(),
-        //                         entry1.4.clone(),
-        //                         entry2.1.clone(),
-        //                         entry2.2.clone(),
-        //                         entry2.3.clone(),
-        //                         entry2.4.clone(),
-        //                     ))
-        //                     .unwrap();
-        //                 }
-        //             }
-        //         }
-        //     });
-
-        // self.table4 = receiver.iter().collect();
-        // self.table4.sort_by(|a, b| a.0.value.cmp(&b.0.value));
-
-        // println!(
-        //     "Table 4 len: {} ({:.2}%)",
-        //     self.table4.len(),
-        //     self.table4.len() as f64 / table_size as f64 * 100.0
-        // );
-
-        // println!("\nFinal tables:");
-        // println!(
-        //     "Table 2 len: {} ({:.2}%)",
-        //     self.table2.len(),
-        //     self.table2.len() as f64 / table_size as f64 * 100.0
-        // );
-        // println!(
-        //     "Table 3 len: {} ({:.2}%)",
-        //     self.table3.len(),
-        //     self.table3.len() as f64 / table_size as f64 * 100.0
-        // );
-        // println!(
-        //     "Table 4 len: {} ({:.2}%)",
-        //     self.table4.len(),
-        //     self.table4.len() as f64 / table_size as f64 * 100.0
-        // );
-        // println!("{:?}\n", self.table1);
-        // println!("{:?}\n", self.table2);
-        // println!("{:?}\n", self.table3);
-        // println!("{:?}", self.table4);
+        info!("Writing raw table 2 to disk");
+        store_raw_table_part(2, 1, &buffer_to_write, data_path);
+        info!("Table 2 raw data written");
     }
 }
 

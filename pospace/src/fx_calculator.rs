@@ -172,8 +172,8 @@ impl FxCalculator {
 
 #[derive(Debug)]
 pub struct Match {
-    left_index: usize,
-    right_index: usize,
+    pub left_index: usize,
+    pub right_index: usize,
 }
 
 #[cfg(test)]
@@ -330,17 +330,20 @@ mod tests {
 
         println!("Total matches: {}", total_matches);
 
+        const MIN_MATCHES: usize = 1 << TEST_K - 1;
+        const MAX_MATCHES: usize = 1 << TEST_K + 1;
+
         assert!(
-            total_matches > (1 << TEST_K) / 2,
+            total_matches > MIN_MATCHES,
             "Too few matches: {} matches found, minimum is {}",
             total_matches,
-            (1 << TEST_K) / 2
+            MIN_MATCHES
         );
         assert!(
-            total_matches < (1 << TEST_K) * 2,
+            total_matches < MAX_MATCHES,
             "Too many matches: {} matches found, maximum is {}",
             total_matches,
-            (1 << TEST_K) * 2
+            MAX_MATCHES
         );
     }
 

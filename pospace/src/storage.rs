@@ -80,7 +80,7 @@ impl Ord for PlotEntry {
 
 impl PartialOrd for PlotEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other).reverse())
+        Some(self.cmp(&other))
     }
 }
 
@@ -93,10 +93,18 @@ where
     new_file.write_all(&bin_data).unwrap();
 }
 
-pub fn store_table1_part(buffer: &[PlotEntry], path: &Path, index: usize) {
+pub fn store_raw_table_part(
+    table_index: usize,
+    part_index: usize,
+    buffer: &[PlotEntry],
+    path: &Path,
+) {
     store_table_part(
         buffer,
-        &path.join(format!(table_raw_filename_format!(), 1, index)),
+        &path.join(format!(
+            table_raw_filename_format!(),
+            table_index, part_index
+        )),
     );
 }
 
@@ -130,7 +138,7 @@ where
     file.read_to_end(&mut buffer).unwrap();
     let mut entries = deserialize::<Vec<T>, T>(&buffer);
 
-    entries.sort();
+    entries.sort_unstable();
 
     let out_path = path.parent().unwrap().join(format!(
         table_sorted_filename_format!(),

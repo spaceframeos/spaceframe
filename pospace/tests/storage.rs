@@ -44,7 +44,7 @@ fn test_kway_merge_table1() {
     let mut last = entries[0].fx;
     assert_eq!(300, entries.len());
     for entry in entries {
-        assert!(entry.fx >= last, "Final table not correctly sorted");
+        assert!(entry.fx <= last, "Final table not correctly sorted");
         last = entry.fx;
     }
 }
@@ -65,7 +65,7 @@ fn test_kway_merge_table1_big_chunk() {
     let mut last = entries[0].fx;
     assert_eq!(300, entries.len());
     for entry in entries {
-        assert!(entry.fx >= last, "Final table not correctly sorted");
+        assert!(entry.fx <= last, "Final table not correctly sorted");
         last = entry.fx;
     }
 }
