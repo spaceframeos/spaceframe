@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, info};
 use std::{
     collections::VecDeque,
     fs::{read_dir, File},
@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::core::collation_size_bits;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs::rename;
 
@@ -34,42 +35,13 @@ macro_rules! table_final_filename_format {
     };
 }
 
-lazy_static! {
-    pub static ref TABLE1_SERIALIZED_ENTRY_SIZE: usize = bincode::serialized_size(&PlotEntry {
-        fx: u64::MAX,
-        x: Some(u64::MAX),
-        position: None,
-        offset: None,
-        collate: None,
-    })
-    .unwrap() as usize;
-}
-
-// #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
-// pub struct Table1Entry {
-//     pub x: u64,
-//     pub y: u64,
-// }
-//
-// impl Ord for Table1Entry {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         self.y.cmp(&other.y)
-//     }
-// }
-//
-// impl PartialOrd for Table1Entry {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         Some(self.cmp(&other))
-//     }
-// }
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct PlotEntry {
     pub fx: u64,
     pub x: Option<u64>,
     pub position: Option<u64>,
     pub offset: Option<u64>,
-    pub collate: Option<u64>,
+    pub collate: Option<Vec<u8>>,
 }
 
 impl Ord for PlotEntry {
@@ -118,25 +90,25 @@ where
         .collect::<Vec<u8>>()
 }
 
-pub fn deserialize<'de, O, I>(buffer: &'de [u8]) -> O
+pub fn deserialize<'de, O, I>(buffer: &'de [u8], entry_size: usize) -> O
 where
     O: FromIterator<I>,
     I: Deserialize<'de>,
 {
     buffer
-        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+        .chunks(entry_size)
         .map(|chunk| bincode::deserialize(&chunk).unwrap())
         .collect::<O>()
 }
 
-pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize) -> PathBuf
+pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize, k: usize) -> PathBuf
 where
     T: Serialize + DeserializeOwned + Ord,
 {
     let mut buffer = Vec::new();
     let mut file = File::open(&path).unwrap();
     file.read_to_end(&mut buffer).unwrap();
-    let mut entries = deserialize::<Vec<T>, T>(&buffer);
+    let mut entries = deserialize::<Vec<T>, T>(&buffer, plotentry_size(table_index, k));
 
     entries.sort_unstable();
 
@@ -149,9 +121,9 @@ where
     out_path
 }
 
-pub fn sort_table_on_disk<T>(table_index: usize, path: &Path, entries_per_chunk: usize)
+pub fn sort_table_on_disk<T>(table_index: usize, path: &Path, entries_per_chunk: usize, k: usize)
 where
-    T: Serialize + DeserializeOwned + Ord + Copy,
+    T: Serialize + DeserializeOwned + Ord,
 {
     // Sort each bucket
     let mut chunks_count = 0;
@@ -162,30 +134,29 @@ where
         .unwrap()
         .filter_map(Result::ok)
         .map(|x| x.path())
+        .filter(|e| {
+            e.is_file()
+                && e.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with(format!("table{}_raw_", table_index).as_str())
+        })
         .enumerate()
     {
-        if entry.is_file()
-            && entry
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with(format!("table{}_raw_", table_index).as_str())
-        {
-            let part_path = sort_table_part::<T>(&entry, table_index, index + 1);
-            parts.push(part_path);
-            chunks_count += 1;
-        }
+        let part_path = sort_table_part::<T>(&entry, table_index, index + 1, k);
+        parts.push(part_path);
+        chunks_count += 1;
     }
 
     // K-Way Merge sort
 
     if chunks_count > 1 {
-        info!("K-Way merging for table 1 ...");
+        info!("K-Way merging for table {} ...", table_index);
 
         let mut state = KWayMerge::<T>::new(
             &parts,
-            *TABLE1_SERIALIZED_ENTRY_SIZE,
+            plotentry_size(table_index, k),
             entries_per_chunk,
             &path.join(format!(table_final_filename_format!(), table_index)),
         );
@@ -194,7 +165,10 @@ where
 
         info!("K-Way merge done");
 
-        info!("{} final entries written", state.item_count);
+        info!(
+            "{} final entries written for table {}",
+            state.item_count, table_index
+        );
     } else {
         rename(
             path.join(format!(table_sorted_filename_format!(), table_index, 1)),
@@ -224,7 +198,7 @@ struct KWayMerge<T> {
 
 impl<T> KWayMerge<T>
 where
-    T: Serialize + DeserializeOwned + Ord + Copy,
+    T: Serialize + DeserializeOwned + Ord,
 {
     pub fn new(
         paths: &[PathBuf],
@@ -250,6 +224,7 @@ where
             let merge_chunk = MergeChunk {
                 id: id_counter,
                 file,
+                entry_size,
                 total_size: file_size,
                 remaining_size: file_size,
                 content: VecDeque::new(),
@@ -274,10 +249,8 @@ where
         let min_chunk = &mut self.chunks[min];
 
         // Move the minimum value to the output vec
-        self.output.push(min_chunk.content[0]);
-
         // Delete the minimum from the chunk (increase the index)
-        min_chunk.content.pop_front();
+        self.output.push(min_chunk.content.pop_front().unwrap());
 
         // Write output if it is full
         if self.output.len() >= self.entries_per_chunk {
@@ -301,8 +274,8 @@ where
             Ok(self
                 .chunks
                 .iter()
-                .map(|c| c.content[0])
-                .collect::<Vec<T>>()
+                .map(|c| &c.content[0])
+                .collect::<Vec<&T>>()
                 .iter()
                 .enumerate()
                 .min_by_key(|&(_, x)| x)
@@ -328,6 +301,7 @@ struct MergeChunk<T> {
     id: u32,
     file: File, // TODO don't keep the file open to prevent "Too many open files" error
     content: VecDeque<T>,
+    entry_size: usize,
     total_size: usize,
     chunk_size: usize,
     remaining_size: usize,
@@ -354,7 +328,7 @@ where
             self.remaining_size -= amount;
 
             // Deserilalize entries
-            let entries = deserialize(&buffer);
+            let entries = deserialize(&buffer, self.entry_size);
             self.content = entries;
         }
     }
@@ -367,6 +341,15 @@ where
 #[derive(Debug)]
 enum ChunkError {
     EmptyChunksWhileFetchingMininum,
+}
+
+// Size in bytes
+pub fn plotentry_size(table_index: usize, k: usize) -> usize {
+    return if table_index == 1 {
+        4 + 16
+    } else {
+        4 + 32 + (collation_size_bits(table_index + 1, k) as f64 / 8 as f64).ceil() as usize
+    };
 }
 
 #[cfg(test)]
@@ -403,7 +386,7 @@ mod tests {
             .unwrap()
             .read_to_end(&mut verify_buffer)
             .unwrap();
-        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer);
+        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer, plotentry_size(1, 12));
 
         assert_eq!(test_data, verify_data);
     }

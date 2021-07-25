@@ -1,8 +1,7 @@
 use rand::thread_rng;
 use rand::Rng;
-use spaceframe_pospace::storage::sort_table_on_disk;
 use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
-use spaceframe_pospace::storage::TABLE1_SERIALIZED_ENTRY_SIZE;
+use spaceframe_pospace::storage::{plotentry_size, sort_table_on_disk};
 use spaceframe_pospace::storage::{store_table_part, PlotEntry};
 use std::fs::File;
 use std::io::Read;
@@ -31,12 +30,12 @@ fn setup_storage() -> TempDir {
 #[test]
 fn test_kway_merge_table1() {
     let dir = setup_storage();
-    sort_table_on_disk::<PlotEntry>(1, dir.path(), 10);
+    sort_table_on_disk::<PlotEntry>(1, dir.path(), 10, 12);
     let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
     let entries = buffer
-        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+        .chunks(plotentry_size(1, 12))
         .map(|chunk| {
             return bincode::deserialize(&chunk).unwrap();
         })
@@ -44,7 +43,7 @@ fn test_kway_merge_table1() {
     let mut last = entries[0].fx;
     assert_eq!(300, entries.len());
     for entry in entries {
-        assert!(entry.fx <= last, "Final table not correctly sorted");
+        assert!(entry.fx >= last, "Final table not correctly sorted");
         last = entry.fx;
     }
 }
@@ -52,12 +51,12 @@ fn test_kway_merge_table1() {
 #[test]
 fn test_kway_merge_table1_big_chunk() {
     let dir = setup_storage();
-    sort_table_on_disk::<PlotEntry>(1, dir.path(), ENTRIES_PER_CHUNK);
+    sort_table_on_disk::<PlotEntry>(1, dir.path(), ENTRIES_PER_CHUNK, 12);
     let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
     let entries = buffer
-        .chunks(*TABLE1_SERIALIZED_ENTRY_SIZE)
+        .chunks(plotentry_size(1, 12))
         .map(|chunk| {
             return bincode::deserialize(&chunk).unwrap();
         })
@@ -65,7 +64,7 @@ fn test_kway_merge_table1_big_chunk() {
     let mut last = entries[0].fx;
     assert_eq!(300, entries.len());
     for entry in entries {
-        assert!(entry.fx <= last, "Final table not correctly sorted");
+        assert!(entry.fx >= last, "Final table not correctly sorted");
         last = entry.fx;
     }
 }

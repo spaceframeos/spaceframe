@@ -3,6 +3,7 @@ use log::debug;
 
 use crate::bits::from_bits;
 use crate::constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M};
+use crate::core::collation_size_bits;
 use crate::storage::PlotEntry;
 use crate::{constants::PARAM_EXT, Bits, BitsSlice};
 
@@ -23,8 +24,6 @@ pub struct FxCalculator {
 }
 
 impl FxCalculator {
-    const COLLA_SIZE: [usize; 8] = [0, 0, 1, 2, 4, 4, 3, 2];
-
     pub fn new(k: usize, table_index: usize) -> Self {
         let mut fx = FxCalculator {
             k,
@@ -58,11 +57,12 @@ impl FxCalculator {
         input.extend_from_bitslice(right);
 
         hasher.update(input.as_raw_slice());
+
         let hash = hasher.finalize().as_bytes().view_bits::<Lsb0>().to_bitvec();
         let output = hash[0..(self.k + PARAM_EXT)].to_bitvec();
 
         if self.table_index >= 4 && self.table_index < 7 {
-            c = hash[0..(self.k * Self::COLLA_SIZE[self.table_index + 1])].to_bitvec();
+            c = hash[0..collation_size_bits(self.table_index + 1, self.k)].to_bitvec();
         }
 
         return (output, c);
