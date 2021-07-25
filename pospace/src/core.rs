@@ -110,24 +110,24 @@ impl PoSpace {
 
         info!("Table 1 raw data written");
 
-        for table_index in 1..NUMBER_OF_TABLES {
-            info!("Starting to sort table {} on disk ...", table_index);
-            sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
-            info!("Table {} sorted on disk", table_index);
+        info!("Starting to sort table 1 on disk ...");
+        sort_table_on_disk::<PlotEntry>(1, data_path, ENTRIES_PER_CHUNK, self.k);
+        info!("Table 1 sorted on disk");
 
-            info!("Calculating table {} ...", table_index + 1);
-
-            let mut file =
-                File::open(data_path.join(format!(table_final_filename_format!(), table_index)))
-                    .unwrap();
+        for table_index in 2..=NUMBER_OF_TABLES {
+            info!("Calculating table {} ...", table_index);
+            let mut file = File::open(
+                data_path.join(format!(table_final_filename_format!(), table_index - 1)),
+            )
+            .unwrap();
             let number_of_entries = min(ENTRIES_PER_CHUNK, 2usize.pow(self.k as u32));
-            let entry_size = plotentry_size(table_index, self.k);
+            let entry_size = plotentry_size(table_index - 1, self.k);
 
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).unwrap();
             let data: Vec<PlotEntry> = deserialize(&buffer, entry_size);
 
-            let mut fx_calculator = FxCalculator::new(self.k, table_index + 1);
+            let mut fx_calculator = FxCalculator::new(self.k, table_index);
             let mut match_counter = 0;
             let mut bucket = 0;
             let mut pos = 0;
@@ -161,7 +161,7 @@ impl PoSpace {
                             let left_entry = &left_bucket[match_item.left_index];
                             let right_entry = &right_bucket[match_item.right_index];
 
-                            let (left_metadata, right_metadata) = if table_index == 1 {
+                            let (left_metadata, right_metadata) = if table_index == 2 {
                                 (
                                     to_bits(left_entry.x.unwrap(), self.k),
                                     to_bits(right_entry.x.unwrap(), self.k),
@@ -169,21 +169,21 @@ impl PoSpace {
                             } else {
                                 (
                                     left_entry.collate.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index + 1, self.k)]
+                                        [..collation_size_bits(table_index, self.k)]
                                         .to_bitvec(),
                                     right_entry.collate.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index + 1, self.k)]
+                                        [..collation_size_bits(table_index, self.k)]
                                         .to_bitvec(),
                                 )
                             };
 
                             assert_eq!(
                                 left_metadata.len(),
-                                collation_size_bits(table_index + 1, self.k)
+                                collation_size_bits(table_index, self.k)
                             );
                             assert_eq!(
                                 right_metadata.len(),
-                                collation_size_bits(table_index + 1, self.k)
+                                collation_size_bits(table_index, self.k)
                             );
 
                             let mut f_output = fx_calculator.calculate_fn(
@@ -194,7 +194,7 @@ impl PoSpace {
 
                             assert_eq!(
                                 f_output.1.len(),
-                                collation_size_bits(table_index + 2, self.k)
+                                collation_size_bits(table_index + 1, self.k)
                             );
 
                             // f_output.1.force_align();
@@ -231,15 +231,22 @@ impl PoSpace {
                 "{} matches found in total ({:.3}%) for table {}",
                 match_counter,
                 (match_counter as f64 / table_size as f64) * 100.0,
-                table_index + 1
+                table_index
             );
 
-            let size = serialized_size(&buffer_to_write[0]);
+            if !buffer_to_write.is_empty() {
+                info!("Writing raw table {} to disk", table_index);
+                // TODO: make multipart writes
+                store_raw_table_part(table_index, 1, &buffer_to_write, data_path);
+                info!("Table {} raw data written", table_index);
 
-            info!("Writing raw table {} to disk", table_index + 1);
-            // TODO: make multipart writes
-            store_raw_table_part(table_index + 1, 1, &buffer_to_write, data_path);
-            info!("Table {} raw data written", table_index + 1);
+                info!("Starting to sort table {} on disk ...", table_index);
+                sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
+                info!("Table {} sorted on disk", table_index);
+            } else {
+                error!("Not enough matches found, try with a larger k");
+                break;
+            }
         }
     }
 }
