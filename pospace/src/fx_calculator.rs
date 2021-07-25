@@ -1,7 +1,5 @@
 use bitvec::prelude::*;
-use log::debug;
 
-use crate::bits::from_bits;
 use crate::constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_M};
 use crate::core::collation_size_bits;
 use crate::storage::PlotEntry;
@@ -135,7 +133,7 @@ mod tests {
     use super::*;
     use crate::bits::{from_bits, to_bits, BitsWrapper};
     use crate::f1_calculator::F1Calculator;
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::BTreeMap;
 
     fn matching_naive(l: u64, r: u64) -> bool {
         let k_bc = PARAM_BC as i128;
@@ -238,20 +236,18 @@ mod tests {
             for yx1 in kv.1 {
                 let e = PlotEntry {
                     fx: from_bits(&yx1.0),
-                    x: None,
+                    metadata: None,
                     position: None,
                     offset: None,
-                    collate: None,
                 };
                 left_bucket.push(e);
             }
             for yx2 in next_bucket {
                 let e = PlotEntry {
                     fx: from_bits(&yx2.0),
-                    x: None,
+                    metadata: None,
                     position: None,
                     offset: None,
-                    collate: None,
                 };
                 right_bucket.push(e);
             }

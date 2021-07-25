@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::*;
 use std::{
     collections::VecDeque,
     fs::{read_dir, File},
@@ -9,6 +9,7 @@ use std::{
 
 use crate::core::collation_size_bits;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::fmt::Debug;
 use std::fs::{remove_file, rename};
 
 /// 1 GB per chunk
@@ -38,10 +39,9 @@ macro_rules! table_final_filename_format {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct PlotEntry {
     pub fx: u64,
-    pub x: Option<u64>,
+    pub metadata: Option<Vec<u8>>,
     pub position: Option<u64>,
     pub offset: Option<u64>,
-    pub collate: Option<Vec<u8>>,
 }
 
 impl Ord for PlotEntry {
@@ -58,7 +58,7 @@ impl PartialOrd for PlotEntry {
 
 pub fn store_table_part<T>(buffer: &[T], path: &Path)
 where
-    T: Serialize,
+    T: Serialize + Debug,
 {
     let mut new_file = File::create(path).unwrap();
     let bin_data = serialize(buffer);
@@ -82,11 +82,15 @@ pub fn store_raw_table_part(
 
 pub fn serialize<T>(buffer: &[T]) -> Vec<u8>
 where
-    T: Serialize,
+    T: Serialize + Debug,
 {
     buffer
         .iter()
-        .flat_map(|entry| bincode::serialize(entry).unwrap())
+        .flat_map(|entry| {
+            let value = bincode::serialize(entry).unwrap();
+            // debug!("Size of {:?} is {}", entry, value.len());
+            return value;
+        })
         .collect::<Vec<u8>>()
 }
 
@@ -103,7 +107,7 @@ where
 
 pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize, k: usize) -> PathBuf
 where
-    T: Serialize + DeserializeOwned + Ord,
+    T: Serialize + DeserializeOwned + Ord + Debug,
 {
     let mut buffer = Vec::new();
     let mut file = File::open(&path).unwrap();
@@ -123,7 +127,7 @@ where
 
 pub fn sort_table_on_disk<T>(table_index: usize, path: &Path, entries_per_chunk: usize, k: usize)
 where
-    T: Serialize + DeserializeOwned + Ord,
+    T: Serialize + DeserializeOwned + Ord + Debug,
 {
     // Sort each bucket
     let mut chunks_count = 0;
@@ -209,7 +213,7 @@ struct KWayMerge<T> {
 
 impl<T> KWayMerge<T>
 where
-    T: Serialize + DeserializeOwned + Ord,
+    T: Serialize + DeserializeOwned + Ord + Debug,
 {
     pub fn new(
         paths: &[PathBuf],
@@ -356,11 +360,17 @@ enum ChunkError {
 
 // Size in bytes
 pub fn plotentry_size(table_index: usize, k: usize) -> usize {
-    return if table_index == 1 {
-        4 + 16
-    } else {
-        4 + 32 + (collation_size_bits(table_index + 1, k) as f64 / 8 as f64).ceil() as usize
-    };
+    let metadata_size = (collation_size_bits(table_index + 1, k) as f64 / 8 as f64).ceil() as usize;
+    let position_size = 8;
+    let offset_size = 8;
+    let fx_size = 8;
+
+    return 11
+        + match table_index {
+            1 => fx_size + metadata_size,
+            7 => fx_size + offset_size + position_size,
+            _ => fx_size + metadata_size + offset_size + position_size,
+        };
 }
 
 #[cfg(test)]
@@ -369,24 +379,24 @@ mod tests {
     use tempdir::TempDir;
 
     use super::*;
+    use crate::bits::to_bits;
 
     #[test]
     fn test_store_table_part_table1() {
+        let test_k = 12;
         let dir = TempDir::new("spaceframe_test_data").unwrap();
         let test_data = vec![
             PlotEntry {
                 fx: 2,
-                x: Some(3),
+                metadata: Some(to_bits(3, test_k).as_raw_slice().to_vec()),
                 position: None,
                 offset: None,
-                collate: None,
             },
             PlotEntry {
                 fx: 6,
-                x: Some(1),
+                metadata: Some(to_bits(1, test_k).as_raw_slice().to_vec()),
                 position: None,
                 offset: None,
-                collate: None,
             },
         ];
         let path = dir.path().join("store_table_1");
@@ -397,7 +407,7 @@ mod tests {
             .unwrap()
             .read_to_end(&mut verify_buffer)
             .unwrap();
-        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer, plotentry_size(1, 12));
+        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer, plotentry_size(1, test_k));
 
         assert_eq!(test_data, verify_data);
     }

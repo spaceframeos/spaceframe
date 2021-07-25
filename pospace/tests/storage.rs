@@ -1,5 +1,6 @@
 use rand::thread_rng;
 use rand::Rng;
+use spaceframe_pospace::bits::to_bits;
 use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
 use spaceframe_pospace::storage::{plotentry_size, sort_table_on_disk};
 use spaceframe_pospace::storage::{store_table_part, PlotEntry};
@@ -15,10 +16,9 @@ fn setup_storage() -> TempDir {
             .map(|x| {
                 return PlotEntry {
                     fx: rng.gen_range(0..120),
-                    x: Some(100 * i + x),
+                    metadata: Some(to_bits(100 * i + x, 12).as_raw_slice().to_vec()),
                     position: None,
                     offset: None,
-                    collate: None,
                 };
             })
             .collect::<Vec<PlotEntry>>();

@@ -1,5 +1,5 @@
 use crossbeam::channel::bounded;
-use log::{debug, error, info, warn};
+use log::*;
 use rayon::prelude::*;
 use std::{
     fs::{create_dir_all, remove_dir_all},
@@ -9,19 +9,17 @@ use std::{
 use crate::storage::{deserialize, plotentry_size, store_raw_table_part, PlotEntry};
 use crate::{
     bits::BitsWrapper,
-    constants::{PARAM_B, PARAM_BC, PARAM_C, PARAM_EXT, PARAM_M},
+    constants::{PARAM_BC, PARAM_EXT},
     f1_calculator::F1Calculator,
     fx_calculator::FxCalculator,
-    storage::{sort_table_on_disk, store_table_part, ENTRIES_PER_CHUNK},
+    storage::{sort_table_on_disk, ENTRIES_PER_CHUNK},
 };
-use std::fs::{read_dir, File};
+use std::fs::File;
 use std::io::Read;
 
 use crate::bits::{from_bits, to_bits};
 use crate::table_final_filename_format;
-use bincode::serialized_size;
 use bitvec::view::BitView;
-use std::cmp::min;
 
 const NUMBER_OF_TABLES: usize = 7;
 
@@ -80,10 +78,9 @@ impl PoSpace {
             while let Ok(data) = receiver.recv() {
                 buffer.push(PlotEntry {
                     fx: data.0.value,
-                    x: Some(data.1.value),
+                    metadata: Some(data.1.bits.as_raw_slice().to_vec()),
                     position: None,
                     offset: None,
-                    collate: None,
                 });
 
                 if buffer.len() % (1024 * 1024) == 0 {
@@ -120,7 +117,6 @@ impl PoSpace {
                 data_path.join(format!(table_final_filename_format!(), table_index - 1)),
             )
             .unwrap();
-            let number_of_entries = min(ENTRIES_PER_CHUNK, 2usize.pow(self.k as u32));
             let entry_size = plotentry_size(table_index - 1, self.k);
 
             let mut buffer = Vec::new();
@@ -161,21 +157,14 @@ impl PoSpace {
                             let left_entry = &left_bucket[match_item.left_index];
                             let right_entry = &right_bucket[match_item.right_index];
 
-                            let (left_metadata, right_metadata) = if table_index == 2 {
-                                (
-                                    to_bits(left_entry.x.unwrap(), self.k),
-                                    to_bits(right_entry.x.unwrap(), self.k),
-                                )
-                            } else {
-                                (
-                                    left_entry.collate.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index, self.k)]
-                                        .to_bitvec(),
-                                    right_entry.collate.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index, self.k)]
-                                        .to_bitvec(),
-                                )
-                            };
+                            let (left_metadata, right_metadata) = (
+                                left_entry.metadata.as_ref().unwrap().view_bits()
+                                    [..collation_size_bits(table_index, self.k)]
+                                    .to_bitvec(),
+                                right_entry.metadata.as_ref().unwrap().view_bits()
+                                    [..collation_size_bits(table_index, self.k)]
+                                    .to_bitvec(),
+                            );
 
                             assert_eq!(
                                 left_metadata.len(),
@@ -186,7 +175,7 @@ impl PoSpace {
                                 collation_size_bits(table_index, self.k)
                             );
 
-                            let mut f_output = fx_calculator.calculate_fn(
+                            let f_output = fx_calculator.calculate_fn(
                                 &to_bits(left_entry.fx, self.k + PARAM_EXT),
                                 &left_metadata,
                                 &right_metadata,
@@ -197,16 +186,13 @@ impl PoSpace {
                                 collation_size_bits(table_index + 1, self.k)
                             );
 
-                            // f_output.1.force_align();
-
                             buffer_to_write.push(PlotEntry {
                                 fx: from_bits(&f_output.0),
-                                x: None,
+                                metadata: Some(f_output.1.as_raw_slice().to_vec()),
                                 position: Some(left_entry.position.unwrap()),
                                 offset: Some(
                                     right_entry.position.unwrap() - left_entry.position.unwrap(),
                                 ),
-                                collate: Some(f_output.1.as_raw_slice().to_vec()),
                             })
                         }
                     }
@@ -264,5 +250,5 @@ pub fn collation_size_bits(table_index: usize, k: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 }
