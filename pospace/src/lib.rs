@@ -12,3 +12,6 @@ pub mod utils;
 
 pub type Bits = BitVec<Lsb0, u8>;
 pub type BitsSlice = BitSlice<Lsb0, u8>;
+
+#[macro_use]
+extern crate lazy_static;

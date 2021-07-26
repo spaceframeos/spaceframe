@@ -59,7 +59,7 @@ impl PoSpace {
         info!("[Table 1] Calculating buckets ...");
 
         rayon::scope(|s| {
-            let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
+            let (sender, receiver) = bounded(*ENTRIES_PER_CHUNK);
 
             s.spawn(|_| {
                 (0..table_size)
@@ -85,13 +85,13 @@ impl PoSpace {
                 if buffer.len() % (1024 * 1024) == 0 {
                     info!(
                         "[Table 1] Calculating progess: {:.3}%",
-                        (buffer.len() + counter * ENTRIES_PER_CHUNK) as f64
+                        (buffer.len() + counter * *ENTRIES_PER_CHUNK) as f64
                             / (table_size as usize) as f64
                             * 100 as f64
                     );
                 }
 
-                if buffer.len() == ENTRIES_PER_CHUNK {
+                if buffer.len() == *ENTRIES_PER_CHUNK {
                     counter += 1;
                     info!("[Table 1] Wrinting part {} to disk ...", counter);
                     store_raw_table_part(1, counter, &buffer, data_path);
@@ -106,7 +106,7 @@ impl PoSpace {
         });
 
         info!("[Table 1] Sorting table on disk ...");
-        sort_table_on_disk::<PlotEntry>(1, data_path, ENTRIES_PER_CHUNK, self.k);
+        sort_table_on_disk::<PlotEntry>(1, data_path, *ENTRIES_PER_CHUNK, self.k);
         info!("[Table 1] Sorting table on disk done");
         info!("[Table 1] Table ready");
 
@@ -133,10 +133,10 @@ impl PoSpace {
 
             while remaining_size > 0 {
                 let mut buffer;
-                if remaining_size > ENTRIES_PER_CHUNK * entry_size {
-                    buffer = vec![0; ENTRIES_PER_CHUNK * entry_size];
+                if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
+                    buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
                     file.read_exact(&mut buffer).unwrap();
-                    remaining_size -= ENTRIES_PER_CHUNK * entry_size;
+                    remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
                 } else {
                     buffer = Vec::new();
                     let amount = file.read_to_end(&mut buffer).unwrap();
@@ -249,7 +249,7 @@ impl PoSpace {
             );
 
             info!("[Table {}] Sorting table on disk ...", table_index);
-            sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
+            sort_table_on_disk::<PlotEntry>(table_index, data_path, *ENTRIES_PER_CHUNK, self.k);
             info!("[Table {}] Sorting table on disk done", table_index);
             info!("[Table {}] Table ready", table_index);
         }

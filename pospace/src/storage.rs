@@ -11,8 +11,16 @@ use crate::core::collation_size_bits;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs::{remove_file, rename};
+use sysinfo::SystemExt;
 
-pub const ENTRIES_PER_CHUNK: usize = 1 << 23;
+lazy_static! {
+    pub static ref ENTRIES_PER_CHUNK: usize = {
+        let mut system = sysinfo::System::new_all();
+        system.refresh_all();
+        let power: u64 = (system.total_memory() as f64).log(2f64) as u64 - 1;
+        1 << power
+    };
+}
 
 #[macro_export]
 macro_rules! table_raw_filename_format {
