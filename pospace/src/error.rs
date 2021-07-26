@@ -32,6 +32,12 @@ pub enum SortError {
 pub enum StorageError {
     #[error("Could not deserialize buffer")]
     DeserializationError,
+
+    #[error("No more entries")]
+    EndOfFile,
+
+    #[error("The content of the plot has been altered")]
+    InvalidFileContent,
 }
 
 #[derive(Error, Debug)]

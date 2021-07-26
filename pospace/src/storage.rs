@@ -1,8 +1,9 @@
 use crate::core::collation_size_bits;
 use crate::error::StorageError;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::io::Read;
 use std::{fs::File, io::Write, path::Path};
 use sysinfo::SystemExt;
 
@@ -117,10 +118,50 @@ pub fn plotentry_size(table_index: usize, k: usize) -> usize {
         };
 }
 
-struct ChunkReader {
+pub struct ChunkReader {
     pub remaining_size: usize,
-    pub file_size: usize,
+    pub entry_size: usize,
     pub file: File,
+}
+
+impl ChunkReader {
+    pub fn new(path: &Path, table_index: usize, k: usize) -> Result<Self> {
+        let file =
+            File::open(path.join(format!(table_final_filename_format!(), table_index))).context(
+                format!("Cannot open final plot file for table {}", table_index),
+            )?;
+        let file_size = file.metadata()?.len() as usize;
+        let entry_size = plotentry_size(table_index, k);
+        let remaining_size = file_size;
+
+        if file_size % entry_size != 0 {
+            return Err(StorageError::InvalidFileContent.into());
+        }
+
+        Ok(ChunkReader {
+            file,
+            entry_size,
+            remaining_size,
+        })
+    }
+
+    pub fn read_chunk(&mut self) -> Result<Vec<PlotEntry>> {
+        if self.remaining_size == 0 {
+            return Err(StorageError::EndOfFile.into());
+        }
+        let mut buffer;
+        if self.remaining_size > *ENTRIES_PER_CHUNK * self.entry_size {
+            buffer = vec![0; *ENTRIES_PER_CHUNK * self.entry_size];
+            self.file.read_exact(&mut buffer)?;
+            self.remaining_size -= *ENTRIES_PER_CHUNK * self.entry_size;
+        } else {
+            buffer = Vec::new();
+            let amount = self.file.read_to_end(&mut buffer)?;
+            self.remaining_size -= amount;
+        }
+        let entries: Vec<PlotEntry> = deserialize(&buffer, self.entry_size)?;
+        Ok(entries)
+    }
 }
 
 #[cfg(test)]

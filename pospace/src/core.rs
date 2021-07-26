@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use crate::storage::{deserialize, plotentry_size, store_raw_table_part, PlotEntry};
+use crate::storage::{plotentry_size, store_raw_table_part, ChunkReader, PlotEntry};
 use crate::{
     bits::BitsWrapper,
     constants::{PARAM_BC, PARAM_EXT},
@@ -122,15 +122,8 @@ impl PoSpace {
 
         for table_index in 2..=NUMBER_OF_TABLES {
             info!("[Table {}] Calculating buckets ...", table_index);
-            let mut file = File::open(
-                self.data_path
-                    .join(format!(table_final_filename_format!(), table_index - 1)),
-            )?;
-            let file_size = file.metadata()?.len() as usize;
-            let entry_size = plotentry_size(table_index - 1, self.k);
-            let mut remaining_size = file_size;
 
-            assert_eq!(file_size % entry_size, 0);
+            let mut chunk_reader = ChunkReader::new(&self.data_path, table_index, self.k)?;
 
             let mut fx_calculator = FxCalculator::new(self.k, table_index);
             let mut match_counter = 0;
@@ -141,128 +134,135 @@ impl PoSpace {
             let mut right_bucket = Vec::new();
             let mut buffer_to_write = Vec::new();
 
-            while remaining_size > 0 {
-                let mut buffer;
-                if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
-                    buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
-                    file.read_exact(&mut buffer)?;
-                    remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
-                } else {
-                    buffer = Vec::new();
-                    let amount = file.read_to_end(&mut buffer)?;
-                    remaining_size -= amount;
-                }
+            loop {
+                match chunk_reader.read_chunk() {
+                    Ok(entries) => {
+                        for mut left_entry in entries {
+                            left_entry.position = Some(pos);
 
-                let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size)?;
+                            let y_bucket = left_entry.fx / PARAM_BC;
 
-                for mut left_entry in entries {
-                    left_entry.position = Some(pos);
+                            if y_bucket == bucket {
+                                left_bucket.push(left_entry);
+                            } else if y_bucket == bucket + 1 {
+                                right_bucket.push(left_entry);
+                            } else {
+                                if !left_bucket.is_empty() && !right_bucket.is_empty() {
+                                    // Check for matches
+                                    let matches =
+                                        fx_calculator.find_matches(&left_bucket, &right_bucket);
 
-                    let y_bucket = left_entry.fx / PARAM_BC;
+                                    // Sanity check
+                                    if matches.len() >= 10_000 {
+                                        error!("Too many matches: {} is >= 10,000", matches.len());
+                                        panic!("Too many matches: {} is >= 10,000", matches.len());
+                                    }
 
-                    if y_bucket == bucket {
-                        left_bucket.push(left_entry);
-                    } else if y_bucket == bucket + 1 {
-                        right_bucket.push(left_entry);
-                    } else {
-                        if !left_bucket.is_empty() && !right_bucket.is_empty() {
-                            // Check for matches
-                            let matches = fx_calculator.find_matches(&left_bucket, &right_bucket);
+                                    match_counter += matches.len();
 
-                            // Sanity check
-                            if matches.len() >= 10_000 {
-                                error!("Too many matches: {} is >= 10,000", matches.len());
-                                panic!("Too many matches: {} is >= 10,000", matches.len());
+                                    for match_item in matches {
+                                        let left_entry = &left_bucket[match_item.left_index];
+                                        let right_entry = &right_bucket[match_item.right_index];
+
+                                        let (left_metadata, right_metadata) = (
+                                            left_entry
+                                                .metadata
+                                                .as_ref()
+                                                .ok_or(PoSpaceError::EmptyMetadata)?
+                                                .view_bits()
+                                                [..collation_size_bits(table_index, self.k)]
+                                                .to_bitvec(),
+                                            right_entry
+                                                .metadata
+                                                .as_ref()
+                                                .ok_or(PoSpaceError::EmptyMetadata)?
+                                                .view_bits()
+                                                [..collation_size_bits(table_index, self.k)]
+                                                .to_bitvec(),
+                                        );
+
+                                        assert_eq!(
+                                            left_metadata.len(),
+                                            collation_size_bits(table_index, self.k)
+                                        );
+                                        assert_eq!(
+                                            right_metadata.len(),
+                                            collation_size_bits(table_index, self.k)
+                                        );
+
+                                        let f_output = fx_calculator.calculate_fn(
+                                            &to_bits(left_entry.fx, self.k + PARAM_EXT),
+                                            &left_metadata,
+                                            &right_metadata,
+                                        );
+
+                                        assert_eq!(
+                                            f_output.1.len(),
+                                            collation_size_bits(table_index + 1, self.k)
+                                        );
+
+                                        buffer_to_write.push(PlotEntry {
+                                            fx: from_bits(&f_output.0),
+                                            metadata: Some(f_output.1.as_raw_slice().to_vec()),
+                                            position: Some(
+                                                left_entry
+                                                    .position
+                                                    .ok_or(PoSpaceError::EmptyPosition)?,
+                                            ),
+                                            offset: Some(
+                                                right_entry
+                                                    .position
+                                                    .ok_or(PoSpaceError::EmptyPosition)?
+                                                    - left_entry
+                                                        .position
+                                                        .ok_or(PoSpaceError::EmptyPosition)?,
+                                            ),
+                                        })
+                                    }
+                                }
+
+                                if y_bucket == bucket + 2 {
+                                    bucket += 1;
+                                    left_bucket = right_bucket.clone();
+                                    right_bucket.clear();
+                                    right_bucket.push(left_entry);
+                                } else {
+                                    bucket = y_bucket;
+                                    left_bucket.clear();
+                                    left_bucket.push(left_entry);
+                                    right_bucket.clear();
+                                }
                             }
 
-                            match_counter += matches.len();
+                            pos += 1;
 
-                            for match_item in matches {
-                                let left_entry = &left_bucket[match_item.left_index];
-                                let right_entry = &right_bucket[match_item.right_index];
-
-                                let (left_metadata, right_metadata) = (
-                                    left_entry
-                                        .metadata
-                                        .as_ref()
-                                        .ok_or(PoSpaceError::EmptyMetadata)?
-                                        .view_bits()[..collation_size_bits(table_index, self.k)]
-                                        .to_bitvec(),
-                                    right_entry
-                                        .metadata
-                                        .as_ref()
-                                        .ok_or(PoSpaceError::EmptyMetadata)?
-                                        .view_bits()[..collation_size_bits(table_index, self.k)]
-                                        .to_bitvec(),
-                                );
-
-                                assert_eq!(
-                                    left_metadata.len(),
-                                    collation_size_bits(table_index, self.k)
-                                );
-                                assert_eq!(
-                                    right_metadata.len(),
-                                    collation_size_bits(table_index, self.k)
-                                );
-
-                                let f_output = fx_calculator.calculate_fn(
-                                    &to_bits(left_entry.fx, self.k + PARAM_EXT),
-                                    &left_metadata,
-                                    &right_metadata,
-                                );
-
-                                assert_eq!(
-                                    f_output.1.len(),
-                                    collation_size_bits(table_index + 1, self.k)
-                                );
-
-                                buffer_to_write.push(PlotEntry {
-                                    fx: from_bits(&f_output.0),
-                                    metadata: Some(f_output.1.as_raw_slice().to_vec()),
-                                    position: Some(
-                                        left_entry.position.ok_or(PoSpaceError::EmptyPosition)?,
-                                    ),
-                                    offset: Some(
-                                        right_entry.position.ok_or(PoSpaceError::EmptyPosition)?
-                                            - left_entry
-                                                .position
-                                                .ok_or(PoSpaceError::EmptyPosition)?,
-                                    ),
-                                })
+                            if match_counter >= (table_size * 2) as usize {
+                                warn!("Too many match, skipping...");
+                                break;
                             }
                         }
 
-                        if y_bucket == bucket + 2 {
-                            bucket += 1;
-                            left_bucket = right_bucket.clone();
-                            right_bucket.clear();
-                            right_bucket.push(left_entry);
-                        } else {
-                            bucket = y_bucket;
-                            left_bucket.clear();
-                            left_bucket.push(left_entry);
-                            right_bucket.clear();
+                        part += 1;
+
+                        if !buffer_to_write.is_empty() {
+                            info!("[Table {}] Writing part {} to disk", table_index, part);
+                            store_raw_table_part(
+                                table_index,
+                                part,
+                                &buffer_to_write,
+                                &self.data_path,
+                            );
+                            buffer_to_write.clear();
+                        }
+
+                        if match_counter >= (table_size * 2) as usize {
+                            break;
                         }
                     }
-
-                    pos += 1;
-
-                    if match_counter >= (table_size * 2) as usize {
-                        warn!("Too many match, skipping...");
-                        break;
-                    }
-                }
-
-                part += 1;
-
-                if !buffer_to_write.is_empty() {
-                    info!("[Table {}] Writing part {} to disk", table_index, part);
-                    store_raw_table_part(table_index, part, &buffer_to_write, &self.data_path);
-                    buffer_to_write.clear();
-                }
-
-                if match_counter >= (table_size * 2) as usize {
-                    break;
+                    Err(e) => match e.downcast_ref::<StorageError>() {
+                        Some(StorageError::EndOfFile) => break,
+                        _ => return Err(e),
+                    },
                 }
             }
 
@@ -285,73 +285,62 @@ impl PoSpace {
     pub fn find_xvalues_from_target(&self, target: &BitsSlice) -> Result<Vec<Vec<PlotEntry>>> {
         assert_eq!(target.len(), self.k);
 
-        let mut last_table = File::open(
-            self.data_path
-                .join(format!(table_final_filename_format!(), 7)),
-        )?;
-
-        let file_size = last_table.metadata()?.len() as usize;
-        let entry_size = plotentry_size(7, self.k);
-        let mut remaining_size = file_size;
+        let mut chunk_reader = ChunkReader::new(&self.data_path, 7, self.k)?;
         let mut proofs = Vec::new();
 
-        while remaining_size > 0 {
-            let mut buffer;
-            if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
-                buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
-                last_table.read_exact(&mut buffer)?;
-                remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
-            } else {
-                buffer = Vec::new();
-                let amount = last_table.read_to_end(&mut buffer)?;
-                remaining_size -= amount;
-            }
+        loop {
+            match chunk_reader.read_chunk() {
+                Ok(entries) => {
+                    let potential_proof_entries: Vec<PlotEntry> = entries
+                        .into_par_iter()
+                        .filter(|entry| to_bits(entry.fx, self.k + PARAM_EXT)[..self.k] == target)
+                        .collect();
 
-            let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size)?;
+                    for table7_entry in potential_proof_entries {
+                        let mut entries_buffer = Vec::new();
+                        let mut temp_buffer = Vec::new();
+                        entries_buffer.push(table7_entry);
 
-            let potential_proof_entries: Vec<PlotEntry> = entries
-                .into_par_iter()
-                .filter(|entry| to_bits(entry.fx, self.k + PARAM_EXT)[..self.k] == target)
-                .collect();
+                        // Going from table 6 to table 1
+                        for i in (1..=6).rev() {
+                            for entry in &entries_buffer {
+                                let pos = entry.position.ok_or(PoSpaceError::EmptyPosition)?;
+                                let offset = entry.offset.ok_or(PoSpaceError::EmptyOffset)?;
+                                let entry_size = plotentry_size(i, self.k);
 
-            for table7_entry in potential_proof_entries {
-                let mut entries_buffer = Vec::new();
-                let mut temp_buffer = Vec::new();
-                entries_buffer.push(table7_entry);
+                                let mut table_i = File::open(
+                                    self.data_path
+                                        .join(format!(table_final_filename_format!(), i)),
+                                )?;
 
-                // Going from table 6 to table 1
-                for i in (1..=6).rev() {
-                    for entry in &entries_buffer {
-                        let pos = entry.position.ok_or(PoSpaceError::EmptyPosition)?;
-                        let offset = entry.offset.ok_or(PoSpaceError::EmptyOffset)?;
-                        let entry_size = plotentry_size(i, self.k);
+                                let mut buffer = vec![0u8; entry_size];
 
-                        let mut table_i = File::open(
-                            self.data_path
-                                .join(format!(table_final_filename_format!(), i)),
-                        )?;
+                                // Retrieve left entry
+                                table_i.seek(SeekFrom::Start(pos * entry_size as u64))?;
+                                table_i.read_exact(&mut buffer)?;
+                                let left_entry: PlotEntry = bincode::deserialize(&buffer)
+                                    .or(Err(StorageError::DeserializationError))?;
 
-                        let mut buffer = vec![0u8; entry_size];
+                                // Retrieve right entry
+                                table_i
+                                    .seek(SeekFrom::Start((pos + offset) * entry_size as u64))?;
+                                table_i.read_exact(&mut buffer)?;
+                                let right_entry: PlotEntry = bincode::deserialize(&buffer)
+                                    .or(Err(StorageError::DeserializationError))?;
 
-                        // Retrieve left entry
-                        table_i.seek(SeekFrom::Start(pos * entry_size as u64))?;
-                        table_i.read_exact(&mut buffer)?;
-                        let left_entry: PlotEntry = bincode::deserialize(&buffer)
-                            .or(Err(StorageError::DeserializationError))?;
-
-                        // Retrieve right entry
-                        table_i.seek(SeekFrom::Start((pos + offset) * entry_size as u64))?;
-                        table_i.read_exact(&mut buffer)?;
-                        let right_entry: PlotEntry = bincode::deserialize(&buffer)
-                            .or(Err(StorageError::DeserializationError))?;
-
-                        temp_buffer.push(left_entry);
-                        temp_buffer.push(right_entry);
+                                temp_buffer.push(left_entry);
+                                temp_buffer.push(right_entry);
+                            }
+                            entries_buffer.clear();
+                            entries_buffer.append(&mut temp_buffer);
+                        }
+                        proofs.push(entries_buffer);
                     }
-                    entries_buffer.clear();
-                    entries_buffer.append(&mut temp_buffer);
                 }
-                proofs.push(entries_buffer);
+                Err(e) => match e.downcast_ref::<StorageError>() {
+                    Some(StorageError::EndOfFile) => break,
+                    _ => return Err(e),
+                },
             }
         }
         Ok(proofs)
