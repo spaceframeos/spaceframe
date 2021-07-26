@@ -108,7 +108,8 @@ impl FxCalculator {
         for pos_l in 0..left_bucket.len() {
             let r = left_bucket[pos_l].fx - remove_y;
             for i in 0..PARAM_M {
-                let r_target = self.left_targets[parity as usize][r as usize][i as usize];
+                let r_target =
+                    self.left_targets[parity as usize][r as usize % PARAM_BC as usize][i as usize];
                 for j in 0..self.rmap[r_target as usize].count {
                     matches.push(Match {
                         left_index: pos_l,

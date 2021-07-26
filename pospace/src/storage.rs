@@ -1,8 +1,9 @@
 use crate::core::collation_size_bits;
-use log::*;
+use crate::error::StorageError;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::{fs::File, io::Write, iter::FromIterator, path::Path};
+use std::{fs::File, io::Write, path::Path};
 use sysinfo::SystemExt;
 
 lazy_static! {
@@ -93,15 +94,12 @@ where
         .collect::<Vec<u8>>()
 }
 
-pub fn deserialize<'de, O, I>(buffer: &'de [u8], entry_size: usize) -> O
-where
-    O: FromIterator<I>,
-    I: Deserialize<'de>,
-{
-    buffer
+pub fn deserialize(buffer: &[u8], entry_size: usize) -> Result<Vec<PlotEntry>> {
+    let result = buffer
         .chunks(entry_size)
-        .map(|chunk| bincode::deserialize(&chunk).unwrap())
-        .collect::<O>()
+        .map(|chunk| Ok(bincode::deserialize(&chunk).or(Err(StorageError::DeserializationError))?))
+        .collect::<Result<Vec<PlotEntry>>>()?;
+    Ok(result)
 }
 
 // Size in bytes
@@ -129,7 +127,7 @@ mod tests {
     use std::io::Read;
 
     #[test]
-    fn test_store_table_part_table1() {
+    fn test_store_table_part_table1() -> Result<()> {
         let test_k = 12;
         let dir = TempDir::new("spaceframe_test_data").unwrap();
         let test_data = vec![
@@ -154,8 +152,9 @@ mod tests {
             .unwrap()
             .read_to_end(&mut verify_buffer)
             .unwrap();
-        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer, plotentry_size(1, test_k));
+        let verify_data: Vec<PlotEntry> = deserialize(&verify_buffer, plotentry_size(1, test_k))?;
 
         assert_eq!(test_data, verify_data);
+        Ok(())
     }
 }

@@ -1,8 +1,9 @@
 use crate::bits::from_bits;
 use crate::core::{PlotSeed, PoSpace};
 use crate::Bits;
+use anyhow::Result;
 use bitvec::view::BitView;
-use log::*;
+use log::debug;
 
 type QualityString = Vec<u8>;
 
@@ -26,14 +27,14 @@ impl Prover {
     /// Require only 6 disk seeks
     pub fn get_quality_string(&self, challenge: &[u8]) -> QualityString {
         let chall_id = from_bits(&challenge.view_bits());
-        let qual_id = chall_id % 32;
-        let target: Bits = challenge.view_bits()[0..self.pospace.k].to_bitvec();
+        let _qual_id = chall_id % 32;
+        let _target: Bits = challenge.view_bits()[0..self.pospace.k].to_bitvec();
         todo!()
     }
 
-    pub fn retrieve_all_proofs(&self, challenge: &[u8]) -> Vec<Proof> {
+    pub fn retrieve_all_proofs(&self, challenge: &[u8]) -> Result<Vec<Proof>> {
         let target: Bits = challenge.view_bits()[0..self.pospace.k].to_bitvec();
-        let proofs = self.pospace.find_xvalues_from_target(&target);
+        let proofs = self.pospace.find_xvalues_from_target(&target)?;
         let proofs = proofs
             .iter()
             .map(|p| {
@@ -50,7 +51,7 @@ impl Prover {
             })
             .collect::<Vec<Proof>>();
         debug!("Proofs: {:?}", proofs);
-        return proofs;
+        return Ok(proofs);
     }
 }
 

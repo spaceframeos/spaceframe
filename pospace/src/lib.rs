@@ -4,6 +4,7 @@ pub mod bits;
 pub mod collation;
 pub mod constants;
 pub mod core;
+pub mod error;
 pub mod f1_calculator;
 pub mod fx_calculator;
 pub mod proofs;

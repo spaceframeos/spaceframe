@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bitvec::prelude::*;
 use chacha20::{
     cipher::{NewCipher, StreamCipher, StreamCipherSeek},
@@ -5,6 +6,7 @@ use chacha20::{
 };
 
 use crate::core::PlotSeed;
+use crate::error::F1CalculatorError;
 use crate::{
     bits::BitsWrapper,
     constants::{PARAM_EXT, STATE_SIZE_BITS},
@@ -23,13 +25,14 @@ impl F1Calculator {
         F1Calculator { k, plot_seed }
     }
 
-    pub fn calculate_f1(&self, x: &BitsWrapper) -> Bits {
-        assert_eq!(x.bits.len(), self.k, "x must be k bits");
-        assert!(
-            x.bits.len() >= PARAM_EXT,
-            "x must greater or equal to {} bits",
-            PARAM_EXT
-        );
+    pub fn calculate_f1(&self, x: &BitsWrapper) -> Result<Bits> {
+        if x.bits.len() != self.k {
+            return Err(F1CalculatorError::LengthMismatch {
+                expected: self.k,
+                found: x.bits.len(),
+            }
+            .into());
+        }
 
         let (q, r) = divmod(x.value * self.k as u64, STATE_SIZE_BITS as u64);
 
@@ -60,6 +63,6 @@ impl F1Calculator {
 
         let extension = &x.bits[..PARAM_EXT];
         result.extend_from_bitslice(extension);
-        result
+        Ok(result)
     }
 }

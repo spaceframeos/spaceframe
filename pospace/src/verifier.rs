@@ -24,7 +24,9 @@ impl Verifier {
         let mut metadata = Vec::new();
 
         for x in &proof.x_values {
-            let fx = f1_calculator.calculate_f1(&BitsWrapper::from(*x, proof.k));
+            let fx = f1_calculator
+                .calculate_f1(&BitsWrapper::from(*x, proof.k))
+                .unwrap();
             fx_values.push(fx);
             metadata.push(to_bits(*x, proof.k));
         }

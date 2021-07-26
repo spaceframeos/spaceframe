@@ -1,10 +1,11 @@
+use anyhow::Context;
+use anyhow::Result;
 use log::*;
 use rand::{rngs::OsRng, RngCore};
 use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
 use spaceframe_pospace::core::PoSpace;
 use spaceframe_pospace::proofs::Prover;
 use spaceframe_pospace::verifier::Verifier;
-use std::convert::TryInto;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -28,7 +29,7 @@ enum Command {
     },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opt = Opts::from_args();
 
     TermLogger::init(
@@ -45,16 +46,21 @@ fn main() {
             OsRng.fill_bytes(&mut plot_seed);
             info!("Plot seed generated");
             let mut pos =
-                PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref());
-            pos.run_phase_1();
+                PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref())
+                    .context("Failed to create proof of space instance")?;
+            pos.run_phase_1()
+                .context("Failed to run phase 1 of plotting")
         }
         Command::Prove { space } => {
             let mut challenge = [0u8; 32];
             OsRng.fill_bytes(&mut challenge);
-            let pos = PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref());
+            let pos = PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref())
+                .context("Failed to create proof of space instance")?;
             let prover = Prover::new(pos);
             // prover.get_quality_string(challenge.as_ref());
-            let proofs = prover.retrieve_all_proofs(challenge.as_ref());
+            let proofs = prover
+                .retrieve_all_proofs(challenge.as_ref())
+                .context("Cannot retrieve all proofs for challange")?;
 
             let verifier = Verifier::new();
 
@@ -65,6 +71,8 @@ fn main() {
                     warn!("Invalid proof");
                 }
             }
+
+            Ok(())
         }
     }
 }

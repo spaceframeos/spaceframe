@@ -19,8 +19,10 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::bits::{from_bits, to_bits};
+use crate::error::{PoSpaceError, StorageError};
 use crate::sort::sort_table_on_disk;
 use crate::table_final_filename_format;
+use anyhow::Result;
 use bitvec::view::BitView;
 use std::path::PathBuf;
 
@@ -37,16 +39,19 @@ pub struct PoSpace {
 }
 
 impl PoSpace {
-    pub fn new(k: usize, plot_seed: PlotSeed, data_path: &Path) -> Self {
-        PoSpace {
+    pub fn new(k: usize, plot_seed: PlotSeed, data_path: &Path) -> Result<Self> {
+        if k < 12 || k > 48 {
+            return Err(PoSpaceError::InvalidK(k).into());
+        }
+        Ok(PoSpace {
             plot_seed,
             k,
             f1_calculator: F1Calculator::new(k, plot_seed),
             data_path: data_path.to_owned(),
-        }
+        })
     }
 
-    pub fn run_phase_1(&mut self) {
+    pub fn run_phase_1(&mut self) -> Result<()> {
         // Clear data folder
         match remove_dir_all(&self.data_path) {
             Ok(_) => {
@@ -57,7 +62,7 @@ impl PoSpace {
             }
         }
         create_dir_all(&self.data_path).ok();
-        info!("Data dir cleaned");
+        info!("Data dir cleaned and created");
 
         let table_size = 1u64 << self.k;
 
@@ -71,7 +76,7 @@ impl PoSpace {
                     .into_par_iter()
                     .for_each_with(sender, |s, x| {
                         let x_wrapped = BitsWrapper::from(x, self.k);
-                        let fx = self.f1_calculator.calculate_f1(&x_wrapped);
+                        let fx = self.f1_calculator.calculate_f1(&x_wrapped).unwrap();
                         s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
                     });
             });
@@ -111,7 +116,7 @@ impl PoSpace {
         });
 
         info!("[Table 1] Sorting table on disk ...");
-        sort_table_on_disk::<PlotEntry>(1, &self.data_path, *ENTRIES_PER_CHUNK, self.k);
+        sort_table_on_disk(1, &self.data_path, *ENTRIES_PER_CHUNK, self.k)?;
         info!("[Table 1] Sorting table on disk done");
         info!("[Table 1] Table ready");
 
@@ -120,9 +125,8 @@ impl PoSpace {
             let mut file = File::open(
                 self.data_path
                     .join(format!(table_final_filename_format!(), table_index - 1)),
-            )
-            .unwrap();
-            let file_size = file.metadata().unwrap().len() as usize;
+            )?;
+            let file_size = file.metadata()?.len() as usize;
             let entry_size = plotentry_size(table_index - 1, self.k);
             let mut remaining_size = file_size;
 
@@ -141,15 +145,15 @@ impl PoSpace {
                 let mut buffer;
                 if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
                     buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
-                    file.read_exact(&mut buffer).unwrap();
+                    file.read_exact(&mut buffer)?;
                     remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
                 } else {
                     buffer = Vec::new();
-                    let amount = file.read_to_end(&mut buffer).unwrap();
+                    let amount = file.read_to_end(&mut buffer)?;
                     remaining_size -= amount;
                 }
 
-                let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size);
+                let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size)?;
 
                 for mut left_entry in entries {
                     left_entry.position = Some(pos);
@@ -178,11 +182,17 @@ impl PoSpace {
                                 let right_entry = &right_bucket[match_item.right_index];
 
                                 let (left_metadata, right_metadata) = (
-                                    left_entry.metadata.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index, self.k)]
+                                    left_entry
+                                        .metadata
+                                        .as_ref()
+                                        .ok_or(PoSpaceError::EmptyMetadata)?
+                                        .view_bits()[..collation_size_bits(table_index, self.k)]
                                         .to_bitvec(),
-                                    right_entry.metadata.as_ref().unwrap().view_bits()
-                                        [..collation_size_bits(table_index, self.k)]
+                                    right_entry
+                                        .metadata
+                                        .as_ref()
+                                        .ok_or(PoSpaceError::EmptyMetadata)?
+                                        .view_bits()[..collation_size_bits(table_index, self.k)]
                                         .to_bitvec(),
                                 );
 
@@ -209,10 +219,14 @@ impl PoSpace {
                                 buffer_to_write.push(PlotEntry {
                                     fx: from_bits(&f_output.0),
                                     metadata: Some(f_output.1.as_raw_slice().to_vec()),
-                                    position: Some(left_entry.position.unwrap()),
+                                    position: Some(
+                                        left_entry.position.ok_or(PoSpaceError::EmptyPosition)?,
+                                    ),
                                     offset: Some(
-                                        right_entry.position.unwrap()
-                                            - left_entry.position.unwrap(),
+                                        right_entry.position.ok_or(PoSpaceError::EmptyPosition)?
+                                            - left_entry
+                                                .position
+                                                .ok_or(PoSpaceError::EmptyPosition)?,
                                     ),
                                 })
                             }
@@ -260,26 +274,23 @@ impl PoSpace {
             );
 
             info!("[Table {}] Sorting table on disk ...", table_index);
-            sort_table_on_disk::<PlotEntry>(
-                table_index,
-                &self.data_path,
-                *ENTRIES_PER_CHUNK,
-                self.k,
-            );
+            sort_table_on_disk(table_index, &self.data_path, *ENTRIES_PER_CHUNK, self.k)?;
             info!("[Table {}] Sorting table on disk done", table_index);
             info!("[Table {}] Table ready", table_index);
         }
+
+        Ok(())
     }
 
-    pub fn find_xvalues_from_target(&self, target: &BitsSlice) -> Vec<Vec<PlotEntry>> {
+    pub fn find_xvalues_from_target(&self, target: &BitsSlice) -> Result<Vec<Vec<PlotEntry>>> {
         assert_eq!(target.len(), self.k);
 
         let mut last_table = File::open(
             self.data_path
                 .join(format!(table_final_filename_format!(), 7)),
-        )
-        .unwrap();
-        let file_size = last_table.metadata().unwrap().len() as usize;
+        )?;
+
+        let file_size = last_table.metadata()?.len() as usize;
         let entry_size = plotentry_size(7, self.k);
         let mut remaining_size = file_size;
         let mut proofs = Vec::new();
@@ -288,15 +299,15 @@ impl PoSpace {
             let mut buffer;
             if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
                 buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
-                last_table.read_exact(&mut buffer).unwrap();
+                last_table.read_exact(&mut buffer)?;
                 remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
             } else {
                 buffer = Vec::new();
-                let amount = last_table.read_to_end(&mut buffer).unwrap();
+                let amount = last_table.read_to_end(&mut buffer)?;
                 remaining_size -= amount;
             }
 
-            let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size);
+            let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size)?;
 
             let potential_proof_entries: Vec<PlotEntry> = entries
                 .into_par_iter()
@@ -310,46 +321,37 @@ impl PoSpace {
 
                 for i in (1..=6).rev() {
                     for entry in &entries_buffer {
-                        let pos = entry.position.unwrap();
-                        let offset = entry.offset.unwrap();
+                        let pos = entry.position.ok_or(PoSpaceError::EmptyPosition)?;
+                        let offset = entry.offset.ok_or(PoSpaceError::EmptyOffset)?;
                         let entry_size = plotentry_size(i, self.k);
 
                         let mut table_i = File::open(
                             self.data_path
                                 .join(format!(table_final_filename_format!(), i)),
-                        )
-                        .unwrap();
+                        )?;
 
                         let mut buffer = vec![0u8; entry_size];
 
-                        table_i
-                            .seek(SeekFrom::Start(pos * entry_size as u64))
-                            .unwrap();
-                        table_i.read_exact(&mut buffer).unwrap();
-                        let left_entry: PlotEntry = bincode::deserialize(&buffer).unwrap();
+                        table_i.seek(SeekFrom::Start(pos * entry_size as u64))?;
+                        table_i.read_exact(&mut buffer)?;
+                        let left_entry: PlotEntry = bincode::deserialize(&buffer)
+                            .or(Err(StorageError::DeserializationError))?;
 
-                        table_i
-                            .seek(SeekFrom::Start((pos + offset) * entry_size as u64))
-                            .unwrap();
-                        table_i.read_exact(&mut buffer).unwrap();
-                        let right_entry: PlotEntry = bincode::deserialize(&buffer).unwrap();
+                        table_i.seek(SeekFrom::Start((pos + offset) * entry_size as u64))?;
+                        table_i.read_exact(&mut buffer)?;
+                        let right_entry: PlotEntry = bincode::deserialize(&buffer)
+                            .or(Err(StorageError::DeserializationError))?;
 
                         temp_buffer.push(left_entry);
                         temp_buffer.push(right_entry);
                     }
                     entries_buffer.clear();
                     entries_buffer.append(&mut temp_buffer);
-
-                    let str = entries_buffer
-                        .iter()
-                        .map(|e| e.fx.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ");
                 }
                 proofs.push(entries_buffer);
             }
         }
-        return proofs;
+        Ok(proofs)
     }
 }
 
