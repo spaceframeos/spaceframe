@@ -61,6 +61,7 @@ mod tests {
         assert_eq!(to_bits(5, 10), bitvec![0, 0, 0, 0, 0, 0, 0, 1, 0, 1]);
         assert_eq!(to_bits(13, 10), bitvec![0, 0, 0, 0, 0, 0, 1, 1, 0, 1]);
         assert_eq!(to_bits(0xab, 10), bitvec![0, 0, 1, 0, 1, 0, 1, 0, 1, 1]);
+        assert_eq!(to_bits(0xab, 8), bitvec![1, 0, 1, 0, 1, 0, 1, 1]);
         assert_eq!(
             to_bits(0xabcd, 16),
             bitvec![1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1]

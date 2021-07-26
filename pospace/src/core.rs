@@ -40,7 +40,7 @@ pub struct PoSpace {
 
 impl PoSpace {
     pub fn new(k: usize, plot_seed: PlotSeed, data_path: &Path) -> Result<Self> {
-        if k < 12 || k > 48 {
+        if k < 12 || k > 50 {
             return Err(PoSpaceError::InvalidK(k).into());
         }
         Ok(PoSpace {
@@ -319,6 +319,7 @@ impl PoSpace {
                 let mut temp_buffer = Vec::new();
                 entries_buffer.push(table7_entry);
 
+                // Going from table 6 to table 1
                 for i in (1..=6).rev() {
                     for entry in &entries_buffer {
                         let pos = entry.position.ok_or(PoSpaceError::EmptyPosition)?;
@@ -332,11 +333,13 @@ impl PoSpace {
 
                         let mut buffer = vec![0u8; entry_size];
 
+                        // Retrieve left entry
                         table_i.seek(SeekFrom::Start(pos * entry_size as u64))?;
                         table_i.read_exact(&mut buffer)?;
                         let left_entry: PlotEntry = bincode::deserialize(&buffer)
                             .or(Err(StorageError::DeserializationError))?;
 
+                        // Retrieve right entry
                         table_i.seek(SeekFrom::Start((pos + offset) * entry_size as u64))?;
                         table_i.read_exact(&mut buffer)?;
                         let right_entry: PlotEntry = bincode::deserialize(&buffer)
@@ -368,5 +371,49 @@ pub fn collation_size_bits(table_index: usize, k: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
+
+    #[test]
+    fn test_invalid_k_too_small() {
+        const TEST_K: usize = 11;
+        let plot_seed = *b"aaaabbbbccccddddaaaabbbbccccdddd";
+        let pos = PoSpace::new(TEST_K, plot_seed, "test_data".as_ref());
+        assert!(pos.is_err());
+    }
+
+    #[test]
+    fn test_invalid_k_too_large() {
+        const TEST_K: usize = 51;
+        let plot_seed = *b"aaaabbbbccccddddaaaabbbbccccdddd";
+        let pos = PoSpace::new(TEST_K, plot_seed, "test_data".as_ref());
+        assert!(pos.is_err());
+    }
+
+    #[test]
+    fn test_valid_k_lower_bound() {
+        const TEST_K: usize = 12;
+        let plot_seed = *b"aaaabbbbccccddddaaaabbbbccccdddd";
+        let pos = PoSpace::new(TEST_K, plot_seed, "test_data".as_ref());
+        assert!(pos.is_ok());
+    }
+
+    #[test]
+    fn test_valid_k_upper_bound() {
+        const TEST_K: usize = 50;
+        let plot_seed = *b"aaaabbbbccccddddaaaabbbbccccdddd";
+        let pos = PoSpace::new(TEST_K, plot_seed, "test_data".as_ref());
+        assert!(pos.is_ok());
+    }
+
+    #[test]
+    fn test_collate_size() {
+        const TEST_K: usize = 12;
+        assert_eq!(collation_size_bits(1, TEST_K), 0);
+        assert_eq!(collation_size_bits(2, TEST_K), TEST_K);
+        assert_eq!(collation_size_bits(3, TEST_K), 2 * TEST_K);
+        assert_eq!(collation_size_bits(4, TEST_K), 4 * TEST_K);
+        assert_eq!(collation_size_bits(5, TEST_K), 4 * TEST_K);
+        assert_eq!(collation_size_bits(6, TEST_K), 3 * TEST_K);
+        assert_eq!(collation_size_bits(7, TEST_K), 2 * TEST_K);
+    }
 }

@@ -117,6 +117,12 @@ pub fn plotentry_size(table_index: usize, k: usize) -> usize {
         };
 }
 
+struct ChunkReader {
+    pub remaining_size: usize,
+    pub file_size: usize,
+    pub file: File,
+}
+
 #[cfg(test)]
 mod tests {
 

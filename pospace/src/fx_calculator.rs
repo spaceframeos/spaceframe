@@ -200,7 +200,8 @@ mod tests {
 
             for i in 0..(1 << 4) {
                 y[i as usize] = from_bits(
-                    &f1.calculate_f1(&BitsWrapper::from(x * (1 << 4) + i as u64, TEST_K)),
+                    &f1.calculate_f1(&BitsWrapper::from(x * (1 << 4) + i as u64, TEST_K))
+                        .unwrap(),
                 );
             }
 

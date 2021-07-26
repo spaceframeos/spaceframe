@@ -31,7 +31,7 @@ fn setup_storage() -> TempDir {
 #[test]
 fn test_kway_merge_table1() {
     let dir = setup_storage();
-    sort_table_on_disk::<PlotEntry>(1, dir.path(), 10, 12);
+    sort_table_on_disk(1, dir.path(), 10, 12).unwrap();
     let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
@@ -52,7 +52,7 @@ fn test_kway_merge_table1() {
 #[test]
 fn test_kway_merge_table1_big_chunk() {
     let dir = setup_storage();
-    sort_table_on_disk::<PlotEntry>(1, dir.path(), *ENTRIES_PER_CHUNK, 12);
+    sort_table_on_disk(1, dir.path(), *ENTRIES_PER_CHUNK, 12).unwrap();
     let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();

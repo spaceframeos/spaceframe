@@ -1,53 +1,44 @@
-use bitvec::{bitvec, order::Lsb0};
+use bitvec::prelude::*;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-// use rand::{rngs::OsRng, RngCore};
+use spaceframe_pospace::bits::BitsWrapper;
+use spaceframe_pospace::constants::PARAM_EXT;
+use spaceframe_pospace::f1_calculator::F1Calculator;
 use spaceframe_pospace::{
-    bits::{from_bits, to_bits, BitsWrapper},
-    core::PoSpace,
-    fx_calculator::{calculate_blake_hash, FxCalculator},
+    bits::{from_bits, to_bits},
+    fx_calculator::FxCalculator,
 };
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("blake3", |b| {
-        b.iter(|| {
-            calculate_blake_hash(
-                black_box(&to_bits(0xab, 10)),
-                black_box(&to_bits(0xabcd, 16)),
-                black_box(&to_bits(0xef34, 16)),
-            )
-        })
+    let mut calculate_fn_group = c.benchmark_group("calculate_fn");
+    calculate_fn_group.bench_function("calculate_f1", |b| {
+        let fx = F1Calculator::new(12, *b"aaaabbbbccccddddaaaabbbbccccdddd");
+        b.iter(|| fx.calculate_f1(black_box(&BitsWrapper::from(0xabcd, 12))))
     });
 
-    c.bench_function("calculate_f2", |b| {
-        let fx_calculator = FxCalculator::new(10);
-        let in_a = to_bits(0xab, 10);
-        let in_b = to_bits(0xcd, 10);
-        let in_c = to_bits(0xef, 10);
-        b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b]), black_box(&in_c));
-        })
+    calculate_fn_group.bench_function("calculate_fn_table2", |b| {
+        let fx = FxCalculator::new(12, 2);
+        let y1 = to_bits(0xabcbef, 12 + PARAM_EXT);
+        let left = to_bits(0xabcd, 12);
+        let right = to_bits(0xefab, 12);
+        b.iter(|| fx.calculate_fn(black_box(&y1), black_box(&left), black_box(&right)))
     });
 
-    c.bench_function("calculate_f3", |b| {
-        let fx_calculator = FxCalculator::new(16);
-        let in_a = to_bits(0xabcd, 16);
-        let in_b = to_bits(0xcdef, 16);
-        let in_c = to_bits(0x1234, 16);
-        let in_d = to_bits(0x5678, 16);
-        let in_e = to_bits(0xef, 10);
-        b.iter(|| {
-            fx_calculator.calculate_fn(black_box(&[&in_a, &in_b, &in_c, &in_d]), &in_e);
-        })
+    calculate_fn_group.bench_function("calculate_fn_table3", |b| {
+        let fx = FxCalculator::new(12, 3);
+        let y1 = to_bits(0xabcbef, 12 + PARAM_EXT);
+        let left = to_bits(0xabcd, 12);
+        let right = to_bits(0xefab, 12);
+        b.iter(|| fx.calculate_fn(black_box(&y1), black_box(&left), black_box(&right)))
     });
 
-    c.bench_function("matching", |b| {
-        let pospace = PoSpace::new(10, b"some key");
-        let l = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1]);
-        let r = BitsWrapper::new(bitvec![Lsb0, u8; 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0]);
-        b.iter(|| {
-            pospace.matching_naive(black_box(&l), black_box(&r));
-        })
+    calculate_fn_group.bench_function("calculate_fn_table4", |b| {
+        let fx = FxCalculator::new(12, 4);
+        let y1 = to_bits(0xabcbef, 12 + PARAM_EXT);
+        let left = to_bits(0xabcd, 12);
+        let right = to_bits(0xefab, 12);
+        b.iter(|| fx.calculate_fn(black_box(&y1), black_box(&left), black_box(&right)))
     });
+    calculate_fn_group.finish();
 
     let mut bits_group = c.benchmark_group("bits");
     bits_group.bench_function("to_bits", |b| {
@@ -63,20 +54,5 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 }
 
-// fn phase1_benchmark(c: &mut Criterion) {
-//     let mut plot_seed = [0u8; 32];
-//     OsRng.fill_bytes(&mut plot_seed);
-//     let mut pos = PoSpace::new(10, &plot_seed);
-
-//     c.bench_function("run_phase1", |b| {
-//         b.iter(|| pos.run_phase_1());
-//     });
-// }
-
 criterion_group!(benches, criterion_benchmark);
-// criterion_group! {
-//     name = phase1;
-//     config = Criterion::default().sample_size(50).significance_level(0.1).noise_threshold(0.05);
-//     targets = phase1_benchmark
-// }
 criterion_main!(benches);
