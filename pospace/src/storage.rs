@@ -12,7 +12,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs::{remove_file, rename};
 
-pub const ENTRIES_PER_CHUNK: usize = 65536 * 512;
+pub const ENTRIES_PER_CHUNK: usize = 1 << 23;
 
 #[macro_export]
 macro_rules! table_raw_filename_format {
@@ -108,6 +108,7 @@ pub fn sort_table_part<T>(path: &Path, table_index: usize, part_index: usize, k:
 where
     T: Serialize + DeserializeOwned + Ord + Debug,
 {
+    info!("[Table {}] Sorting part {} ...", table_index, part_index);
     let mut buffer = Vec::new();
     let mut file = File::open(&path).unwrap();
     file.read_to_end(&mut buffer).unwrap();
@@ -121,6 +122,7 @@ where
     ));
 
     store_table_part(&entries, &out_path);
+    info!("[Table {}] Part {} sorted", table_index, part_index);
     out_path
 }
 
@@ -155,23 +157,19 @@ where
     // K-Way Merge sort
 
     if chunks_count > 1 {
-        info!("K-Way merging for table {} ...", table_index);
+        info!("[Table {}] K-Way merging ...", table_index);
 
         let mut state = KWayMerge::<T>::new(
             &parts,
             plotentry_size(table_index, k),
             entries_per_chunk,
             &path.join(format!(table_final_filename_format!(), table_index)),
+            table_index,
         );
 
         while state.run_iteration() != KWayMergeState::Done {}
 
-        info!("K-Way merge done");
-
-        info!(
-            "{} final entries written for table {}",
-            state.item_count, table_index
-        );
+        info!("[Table {}] K-Way merge done", table_index);
     } else {
         rename(
             path.join(format!(table_sorted_filename_format!(), table_index, 1)),
@@ -180,18 +178,18 @@ where
         .unwrap();
     }
 
-    // info!("Removing intermediate files for table {}", table_index);
-    // read_dir(path)
-    //     .unwrap()
-    //     .filter_map(Result::ok)
-    //     .map(|x| x.path())
-    //     .filter(|e| {
-    //         let filename = e.file_name().unwrap().to_str().unwrap();
-    //         return e.is_file()
-    //             && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
-    //                 || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
-    //     })
-    //     .for_each(|f| remove_file(f).unwrap());
+    info!("[Table {}] Cleaning intermediate files ...", table_index);
+    read_dir(path)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|x| x.path())
+        .filter(|e| {
+            let filename = e.file_name().unwrap().to_str().unwrap();
+            return e.is_file()
+                && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
+                    || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
+        })
+        .for_each(|f| remove_file(f).unwrap());
 }
 
 #[derive(Debug, PartialEq)]
@@ -208,6 +206,7 @@ struct KWayMerge<T> {
     output: Vec<T>,
     iter_count: usize,
     item_count: usize,
+    table_index: usize,
 }
 
 impl<T> KWayMerge<T>
@@ -219,6 +218,7 @@ where
         entry_size: usize,
         entries_per_chunk: usize,
         output_file_path: &Path,
+        table_index: usize,
     ) -> Self {
         let chunk_size = entries_per_chunk / (paths.len() - 1) * entry_size;
         let mut state = Self {
@@ -228,6 +228,7 @@ where
             iter_count: 0,
             item_count: 0,
             output_file: File::create(output_file_path).unwrap(),
+            table_index,
         };
 
         let mut id_counter = 1;
@@ -277,6 +278,10 @@ where
 
         if self.chunks.len() == 0 {
             self.write_output();
+            info!(
+                "[Table {}] Final part {} written",
+                self.table_index, self.iter_count
+            );
             return KWayMergeState::Done;
         }
 

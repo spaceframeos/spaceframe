@@ -15,12 +15,11 @@ use crate::{
     storage::{sort_table_on_disk, ENTRIES_PER_CHUNK},
 };
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 
 use crate::bits::{from_bits, to_bits};
 use crate::table_final_filename_format;
 use bitvec::view::BitView;
-use std::fmt::Error;
 
 const NUMBER_OF_TABLES: usize = 7;
 
@@ -57,7 +56,7 @@ impl PoSpace {
 
         let table_size = 1u64 << self.k;
 
-        info!("Calculating table 1 ...");
+        info!("[Table 1] Calculating buckets ...");
 
         rayon::scope(|s| {
             let (sender, receiver) = bounded(ENTRIES_PER_CHUNK);
@@ -70,11 +69,10 @@ impl PoSpace {
                         let fx = self.f1_calculator.calculate_f1(&x_wrapped);
                         s.send((BitsWrapper::new(fx), x_wrapped)).unwrap();
                     });
-                info!("Calculating finished");
             });
 
             let mut buffer = Vec::new();
-            let mut counter = 1;
+            let mut counter = 0;
 
             while let Ok(data) = receiver.recv() {
                 buffer.push(PlotEntry {
@@ -86,32 +84,34 @@ impl PoSpace {
 
                 if buffer.len() % (1024 * 1024) == 0 {
                     info!(
-                        "Progess: {:.3}%",
-                        (buffer.len() + (counter - 1) * ENTRIES_PER_CHUNK) as f64
+                        "[Table 1] Calculating progess: {:.3}%",
+                        (buffer.len() + counter * ENTRIES_PER_CHUNK) as f64
                             / (table_size as usize) as f64
                             * 100 as f64
                     );
                 }
 
                 if buffer.len() == ENTRIES_PER_CHUNK {
-                    info!("Wrinting raw data to disk for table 1 ...");
-                    store_raw_table_part(1, counter, &buffer, data_path);
                     counter += 1;
+                    info!("[Table 1] Wrinting part {} to disk ...", counter);
+                    store_raw_table_part(1, counter, &buffer, data_path);
                     buffer.clear();
                 }
             }
 
             if buffer.len() > 0 {
+                info!("[Table 1] Wrinting part {} to disk ...", counter);
                 store_raw_table_part(1, counter, &buffer, data_path);
             }
         });
 
-        info!("Starting to sort table 1 on disk ...");
+        info!("[Table 1] Sorting table on disk ...");
         sort_table_on_disk::<PlotEntry>(1, data_path, ENTRIES_PER_CHUNK, self.k);
-        info!("Table 1 sorted on disk");
+        info!("[Table 1] Sorting table on disk done");
+        info!("[Table 1] Table ready");
 
         for table_index in 2..=NUMBER_OF_TABLES {
-            info!("Calculating table {} ...", table_index);
+            info!("[Table {}] Calculating buckets ...", table_index);
             let mut file = File::open(
                 data_path.join(format!(table_final_filename_format!(), table_index - 1)),
             )
@@ -231,10 +231,7 @@ impl PoSpace {
                 part += 1;
 
                 if !buffer_to_write.is_empty() {
-                    info!(
-                        "Writing raw data part {} for table {} to disk",
-                        part, table_index
-                    );
+                    info!("[Table {}] Writing part {} to disk", table_index, part);
                     store_raw_table_part(table_index, part, &buffer_to_write, data_path);
                     buffer_to_write.clear();
                 }
@@ -245,15 +242,16 @@ impl PoSpace {
             }
 
             info!(
-                "{} matches found in total ({:.3}%) for table {}",
+                "[Table {}] {} matches found ({:.3}% of table 1 size)",
+                table_index,
                 match_counter,
-                (match_counter as f64 / table_size as f64) * 100.0,
-                table_index
+                (match_counter as f64 / table_size as f64) * 100.0
             );
 
-            info!("Starting to sort table {} on disk ...", table_index);
+            info!("[Table {}] Sorting table on disk ...", table_index);
             sort_table_on_disk::<PlotEntry>(table_index, data_path, ENTRIES_PER_CHUNK, self.k);
-            info!("Table {} sorted on disk", table_index);
+            info!("[Table {}] Sorting table on disk done", table_index);
+            info!("[Table {}] Table ready", table_index);
         }
     }
 }
