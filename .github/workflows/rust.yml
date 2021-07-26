@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build and test:
 
     runs-on: ubuntu-latest
 
@@ -26,6 +26,6 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
-      run: cargo build --release --verbose
+      run: cargo build --release
     - name: Run tests
       run: cargo test --release --tests
