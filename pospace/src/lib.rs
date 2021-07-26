@@ -7,6 +7,7 @@ pub mod core;
 pub mod f1_calculator;
 pub mod fx_calculator;
 pub mod proofs;
+pub mod sort;
 pub mod storage;
 pub mod utils;
 

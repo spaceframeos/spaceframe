@@ -1,8 +1,9 @@
 use rand::thread_rng;
 use rand::Rng;
 use spaceframe_pospace::bits::to_bits;
+use spaceframe_pospace::sort::sort_table_on_disk;
+use spaceframe_pospace::storage::plotentry_size;
 use spaceframe_pospace::storage::ENTRIES_PER_CHUNK;
-use spaceframe_pospace::storage::{plotentry_size, sort_table_on_disk};
 use spaceframe_pospace::storage::{store_table_part, PlotEntry};
 use std::fs::File;
 use std::io::Read;
@@ -51,7 +52,7 @@ fn test_kway_merge_table1() {
 #[test]
 fn test_kway_merge_table1_big_chunk() {
     let dir = setup_storage();
-    sort_table_on_disk::<PlotEntry>(1, dir.path(), ENTRIES_PER_CHUNK, 12);
+    sort_table_on_disk::<PlotEntry>(1, dir.path(), *ENTRIES_PER_CHUNK, 12);
     let mut file = File::open(dir.path().join("table1_final")).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();

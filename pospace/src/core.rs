@@ -12,12 +12,13 @@ use crate::{
     constants::{PARAM_BC, PARAM_EXT},
     f1_calculator::F1Calculator,
     fx_calculator::FxCalculator,
-    storage::{sort_table_on_disk, ENTRIES_PER_CHUNK},
+    storage::ENTRIES_PER_CHUNK,
 };
 use std::fs::File;
 use std::io::Read;
 
 use crate::bits::{from_bits, to_bits};
+use crate::sort::sort_table_on_disk;
 use crate::table_final_filename_format;
 use bitvec::view::BitView;
 
