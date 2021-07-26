@@ -1,4 +1,5 @@
 use std::io::ErrorKind;
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -26,12 +27,18 @@ pub enum F1CalculatorError {
 pub enum SortError {
     #[error("Could not rename sorted plot to final plot: {0:?}")]
     RenameError(ErrorKind),
+
+    #[error("Could not delete intermediate file '{0:?}': {1:?}")]
+    DeleteError(PathBuf, ErrorKind),
 }
 
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("Could not deserialize buffer")]
     DeserializationError,
+
+    #[error("Could not serialize buffer")]
+    SerializationError,
 
     #[error("No more entries")]
     EndOfFile,

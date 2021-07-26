@@ -1,5 +1,5 @@
 use crate::storage::{deserialize, plotentry_size, serialize, store_table_part, PlotEntry};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::*;
 use std::fmt::Debug;
 use std::fs::{read_dir, remove_file, rename, File};
@@ -18,9 +18,18 @@ pub fn sort_table_part(
 ) -> Result<PathBuf> {
     info!("[Table {}] Sorting part {} ...", table_index, part_index);
     let mut buffer = Vec::new();
-    let mut file = File::open(&path).unwrap();
-    file.read_to_end(&mut buffer).unwrap();
-    let mut entries = deserialize(&buffer, plotentry_size(table_index, k))?;
+    let mut file = File::open(&path).context(format!(
+        "Could not open plot file part {} of table {}",
+        part_index, table_index
+    ))?;
+    file.read_to_end(&mut buffer).context(format!(
+        "Could not read plot file part {} of table {}",
+        part_index, table_index
+    ))?;
+    let mut entries = deserialize(&buffer, plotentry_size(table_index, k)).context(format!(
+        "Could not deserialize part {} of table {}",
+        part_index, table_index
+    ))?;
 
     entries.sort_unstable();
 
@@ -29,7 +38,10 @@ pub fn sort_table_part(
         table_index, part_index
     ));
 
-    store_table_part(&entries, &out_path);
+    store_table_part(&entries, &out_path).context(format!(
+        "Could not store table {} part {} to disk",
+        table_index, part_index
+    ))?;
     info!("[Table {}] Part {} sorted", table_index, part_index);
     Ok(out_path)
 }
@@ -45,7 +57,8 @@ pub fn sort_table_on_disk(
     let mut parts = Vec::new();
 
     // Sort individual table parts
-    for (index, entry) in read_dir(path)?
+    for (index, entry) in read_dir(path)
+        .context(format!("Could not read directory: {:?}", path))?
         .filter_map(Result::ok)
         .map(|x| x.path())
         .filter(|e| {
@@ -74,9 +87,17 @@ pub fn sort_table_on_disk(
             entries_per_chunk,
             &path.join(format!(table_final_filename_format!(), table_index)),
             table_index,
-        )?;
+        )
+        .context(format!(
+            "Could not start k-way merge for table {}",
+            table_index
+        ))?;
 
-        while state.run_iteration()? != KWayMergeState::Done {}
+        while state
+            .run_iteration()
+            .context("An error occurred during a k-way merge iteration")?
+            != KWayMergeState::Done
+        {}
 
         info!("[Table {}] K-Way merge done", table_index);
     } else {
@@ -84,11 +105,19 @@ pub fn sort_table_on_disk(
             path.join(format!(table_sorted_filename_format!(), table_index, 1)),
             path.join(format!(table_final_filename_format!(), table_index)),
         )
-        .or_else(|e| Err(SortError::RenameError(e.kind())))?
+        .or_else(|e| Err(SortError::RenameError(e.kind())))
+        .context(format!(
+            "Could not rename plot file for table {}",
+            table_index
+        ))?
     }
 
     info!("[Table {}] Cleaning intermediate files ...", table_index);
-    read_dir(path)?
+    read_dir(path)
+        .context(format!(
+            "Could not read directory ({:?}) to clean intermediate files",
+            path
+        ))?
         .filter_map(Result::ok)
         .map(|x| x.path())
         .filter(|e| {
@@ -97,8 +126,14 @@ pub fn sort_table_on_disk(
                 && (filename.starts_with(format!("table{}_raw_", table_index).as_str())
                     || filename.starts_with(format!("table{}_sorted_", table_index).as_str()));
         })
-        .map(|f| remove_file(f).or_else(|e| Err(SortError::RenameError(e.kind()).into())))
-        .collect::<Result<()>>()?;
+        .map(|f| {
+            remove_file(&f).or_else(|e| Err(SortError::DeleteError(f.to_owned(), e.kind()).into()))
+        })
+        .collect::<Result<()>>()
+        .context(format!(
+            "Could not clean intermediate files for table {}",
+            table_index
+        ))?;
 
     Ok(())
 }
@@ -135,7 +170,8 @@ impl KWayMerge {
             output: Vec::new(),
             iter_count: 0,
             item_count: 0,
-            output_file: File::create(output_file_path)?,
+            output_file: File::create(output_file_path)
+                .context(format!("Failed to create file: {:?}", output_file_path))?,
             table_index,
         };
 
@@ -164,11 +200,13 @@ impl KWayMerge {
         // Load new data into chunks if they are empty
         for chunk in self.chunks.iter_mut() {
             // Refill chunk
-            chunk.refill()?;
+            chunk.refill().context("Failed to refill chunk")?;
         }
 
         // Find the min
-        let min = self.find_min_chunk()?;
+        let min = self
+            .find_min_chunk()
+            .context("Failed to find minimum among chunks")?;
         let min_chunk = &mut self.chunks[min];
 
         // Move the minimum value to the output vec
@@ -182,7 +220,7 @@ impl KWayMerge {
 
         // Write output if it is full
         if self.output.len() >= self.entries_per_chunk {
-            self.write_output()?;
+            self.write_output().context("Failed to write output data")?;
             self.output.clear();
         }
 
@@ -190,7 +228,7 @@ impl KWayMerge {
         self.chunks.retain(|x| !x.is_done());
 
         if self.chunks.len() == 0 {
-            self.write_output()?;
+            self.write_output().context("Failed to write output data")?;
             info!(
                 "[Table {}] Final part {} written",
                 self.table_index, self.iter_count
@@ -222,7 +260,7 @@ impl KWayMerge {
         self.iter_count += 1;
         self.item_count += self.output.len();
         if !self.output.is_empty() {
-            let bin_data = serialize(&self.output);
+            let bin_data = serialize(&self.output)?;
             self.output_file.write_all(&bin_data)?;
         }
         Ok(())

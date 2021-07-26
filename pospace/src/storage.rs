@@ -57,13 +57,13 @@ impl PartialOrd for PlotEntry {
     }
 }
 
-pub fn store_table_part<T>(buffer: &[T], path: &Path)
-where
-    T: Serialize + Debug,
-{
-    let mut new_file = File::create(path).unwrap();
-    let bin_data = serialize(buffer);
-    new_file.write_all(&bin_data).unwrap();
+pub fn store_table_part(buffer: &[PlotEntry], path: &Path) -> Result<()> {
+    let mut new_file = File::create(path).context(format!("Could not create file {:?}", path))?;
+    let bin_data = serialize(buffer).context("Could not serialize table part")?;
+    new_file
+        .write_all(&bin_data)
+        .context("Could not write table part to disk")?;
+    Ok(())
 }
 
 pub fn store_raw_table_part(
@@ -71,39 +71,37 @@ pub fn store_raw_table_part(
     part_index: usize,
     buffer: &[PlotEntry],
     path: &Path,
-) {
+) -> Result<()> {
     store_table_part(
         buffer,
         &path.join(format!(
             table_raw_filename_format!(),
             table_index, part_index
         )),
-    );
+    )
 }
 
-pub fn serialize<T>(buffer: &[T]) -> Vec<u8>
-where
-    T: Serialize + Debug,
-{
-    buffer
-        .iter()
-        .flat_map(|entry| {
-            let value = bincode::serialize(entry).unwrap();
-            // debug!("Size of {:?} is {}", entry, value.len());
-            return value;
-        })
-        .collect::<Vec<u8>>()
+fn ser(entry: &PlotEntry) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(entry).or(Err(StorageError::SerializationError))?)
+}
+
+pub fn serialize(buffer: &[PlotEntry]) -> Result<Vec<u8>> {
+    let res = buffer.iter().map(ser).collect::<Result<Vec<Vec<u8>>>>()?;
+    Ok(res.iter().flatten().cloned().collect::<Vec<u8>>())
+}
+
+fn deser(chunk: &[u8]) -> Result<PlotEntry> {
+    Ok(bincode::deserialize(&chunk).or(Err(StorageError::DeserializationError))?)
 }
 
 pub fn deserialize(buffer: &[u8], entry_size: usize) -> Result<Vec<PlotEntry>> {
-    let result = buffer
+    buffer
         .chunks(entry_size)
-        .map(|chunk| Ok(bincode::deserialize(&chunk).or(Err(StorageError::DeserializationError))?))
-        .collect::<Result<Vec<PlotEntry>>>()?;
-    Ok(result)
+        .map(deser)
+        .collect::<Result<Vec<PlotEntry>>>()
 }
 
-// Size in bytes
+/// Size in bytes
 pub fn plotentry_size(table_index: usize, k: usize) -> usize {
     let metadata_size = (collation_size_bits(table_index + 1, k) as f64 / 8 as f64).ceil() as usize;
     let position_size = 8;
@@ -192,7 +190,7 @@ mod tests {
             },
         ];
         let path = dir.path().join("store_table_1");
-        store_table_part(&test_data, &path);
+        store_table_part(&test_data, &path).unwrap();
 
         let mut verify_buffer = Vec::new();
         File::open(&path)

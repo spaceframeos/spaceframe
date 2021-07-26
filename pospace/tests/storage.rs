@@ -23,7 +23,7 @@ fn setup_storage() -> TempDir {
                 };
             })
             .collect::<Vec<PlotEntry>>();
-        store_table_part(&data, &dir.path().join(format!("table1_raw_{}", i)));
+        store_table_part(&data, &dir.path().join(format!("table1_raw_{}", i))).unwrap();
     }
     dir
 }

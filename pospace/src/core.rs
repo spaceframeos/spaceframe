@@ -1,4 +1,4 @@
-use crossbeam::channel::bounded;
+use crossbeam_channel::bounded;
 use log::*;
 use rayon::prelude::*;
 use std::{
@@ -22,7 +22,7 @@ use crate::bits::{from_bits, to_bits};
 use crate::error::{PoSpaceError, StorageError};
 use crate::sort::sort_table_on_disk;
 use crate::table_final_filename_format;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bitvec::view::BitView;
 use std::path::PathBuf;
 
@@ -58,7 +58,7 @@ impl PoSpace {
                 info!("Cleaning data folder");
             }
             Err(e) => {
-                warn!("Cannot clean data folder: {}", e);
+                warn!("Data folder not cleaned: {}", e);
             }
         }
         create_dir_all(&self.data_path).ok();
@@ -68,7 +68,7 @@ impl PoSpace {
 
         info!("[Table 1] Calculating buckets ...");
 
-        rayon::scope(|s| {
+        rayon::scope(|s| -> Result<()> {
             let (sender, receiver) = bounded(*ENTRIES_PER_CHUNK);
 
             s.spawn(|_| {
@@ -104,26 +104,32 @@ impl PoSpace {
                 if buffer.len() == *ENTRIES_PER_CHUNK {
                     counter += 1;
                     info!("[Table 1] Wrinting part {} to disk ...", counter);
-                    store_raw_table_part(1, counter, &buffer, &self.data_path);
+                    store_raw_table_part(1, counter, &buffer, &self.data_path)
+                        .context(format!("Failed to store part {} of table 1", counter))?;
                     buffer.clear();
                 }
             }
 
             if buffer.len() > 0 {
                 info!("[Table 1] Wrinting part {} to disk ...", counter);
-                store_raw_table_part(1, counter, &buffer, &self.data_path);
+                store_raw_table_part(1, counter, &buffer, &self.data_path)
+                    .context(format!("Failed to store part {} of table 1", counter))?;
             }
-        });
+
+            Ok(())
+        })?;
 
         info!("[Table 1] Sorting table on disk ...");
-        sort_table_on_disk(1, &self.data_path, *ENTRIES_PER_CHUNK, self.k)?;
+        sort_table_on_disk(1, &self.data_path, *ENTRIES_PER_CHUNK, self.k)
+            .context(format!("Could not sort table {} on disk", 1))?;
         info!("[Table 1] Sorting table on disk done");
         info!("[Table 1] Table ready");
 
         for table_index in 2..=NUMBER_OF_TABLES {
             info!("[Table {}] Calculating buckets ...", table_index);
 
-            let mut chunk_reader = ChunkReader::new(&self.data_path, table_index, self.k)?;
+            let mut chunk_reader = ChunkReader::new(&self.data_path, table_index - 1, self.k)
+                .context("Could not create chunk reader")?;
 
             let mut fx_calculator = FxCalculator::new(self.k, table_index);
             let mut match_counter = 0;
@@ -251,7 +257,11 @@ impl PoSpace {
                                 part,
                                 &buffer_to_write,
                                 &self.data_path,
-                            );
+                            )
+                            .context(format!(
+                                "Failed to store part {} of table {}",
+                                part, table_index
+                            ))?;
                             buffer_to_write.clear();
                         }
 
@@ -274,7 +284,8 @@ impl PoSpace {
             );
 
             info!("[Table {}] Sorting table on disk ...", table_index);
-            sort_table_on_disk(table_index, &self.data_path, *ENTRIES_PER_CHUNK, self.k)?;
+            sort_table_on_disk(table_index, &self.data_path, *ENTRIES_PER_CHUNK, self.k)
+                .context(format!("Could not sort table {} on disk", table_index))?;
             info!("[Table {}] Sorting table on disk done", table_index);
             info!("[Table {}] Table ready", table_index);
         }
@@ -285,7 +296,8 @@ impl PoSpace {
     pub fn find_xvalues_from_target(&self, target: &BitsSlice) -> Result<Vec<Vec<PlotEntry>>> {
         assert_eq!(target.len(), self.k);
 
-        let mut chunk_reader = ChunkReader::new(&self.data_path, 7, self.k)?;
+        let mut chunk_reader = ChunkReader::new(&self.data_path, 7, self.k)
+            .context("Could not create chunk reader")?;
         let mut proofs = Vec::new();
 
         loop {
@@ -316,17 +328,40 @@ impl PoSpace {
                                 let mut buffer = vec![0u8; entry_size];
 
                                 // Retrieve left entry
-                                table_i.seek(SeekFrom::Start(pos * entry_size as u64))?;
-                                table_i.read_exact(&mut buffer)?;
+                                table_i
+                                    .seek(SeekFrom::Start(pos * entry_size as u64))
+                                    .context(format!(
+                                        "Could not seek to left entry at position {} in table {}",
+                                        pos, i
+                                    ))?;
+                                table_i.read_exact(&mut buffer).context(format!(
+                                    "Could not read left entry at position {} in table {}",
+                                    pos, i
+                                ))?;
                                 let left_entry: PlotEntry = bincode::deserialize(&buffer)
-                                    .or(Err(StorageError::DeserializationError))?;
+                                    .or(Err(StorageError::DeserializationError))
+                                    .context(format!(
+                                        "Could not deserialize left entry in table {}",
+                                        i
+                                    ))?;
 
                                 // Retrieve right entry
                                 table_i
-                                    .seek(SeekFrom::Start((pos + offset) * entry_size as u64))?;
-                                table_i.read_exact(&mut buffer)?;
+                                    .seek(SeekFrom::Start((pos + offset) * entry_size as u64))
+                                    .context(format!(
+                                        "Could not seek to right entry at position {} with offset {} in table {}",
+                                        pos, offset, i
+                                    ))?;
+                                table_i.read_exact(&mut buffer).context(format!(
+                                    "Could not read right entry at position {} with offset {} in table {}",
+                                    pos, offset, i
+                                ))?;
                                 let right_entry: PlotEntry = bincode::deserialize(&buffer)
-                                    .or(Err(StorageError::DeserializationError))?;
+                                    .or(Err(StorageError::DeserializationError))
+                                    .context(format!(
+                                        "Could not deserialize right entry in table {}",
+                                        i
+                                    ))?;
 
                                 temp_buffer.push(left_entry);
                                 temp_buffer.push(right_entry);
@@ -404,5 +439,6 @@ mod tests {
         assert_eq!(collation_size_bits(5, TEST_K), 4 * TEST_K);
         assert_eq!(collation_size_bits(6, TEST_K), 3 * TEST_K);
         assert_eq!(collation_size_bits(7, TEST_K), 2 * TEST_K);
+        assert_eq!(collation_size_bits(8, TEST_K), 0);
     }
 }
