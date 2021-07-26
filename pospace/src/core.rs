@@ -13,36 +13,42 @@ use crate::{
     f1_calculator::F1Calculator,
     fx_calculator::FxCalculator,
     storage::ENTRIES_PER_CHUNK,
+    BitsSlice,
 };
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::bits::{from_bits, to_bits};
 use crate::sort::sort_table_on_disk;
 use crate::table_final_filename_format;
 use bitvec::view::BitView;
+use std::path::PathBuf;
 
 const NUMBER_OF_TABLES: usize = 7;
 
-#[derive(Debug)]
+pub type PlotSeed = [u8; 32];
+
+#[derive(Debug, Clone)]
 pub struct PoSpace {
-    plot_seed: Vec<u8>,
-    k: usize,
+    pub plot_seed: PlotSeed,
+    pub k: usize,
     f1_calculator: F1Calculator,
+    data_path: PathBuf,
 }
 
 impl PoSpace {
-    pub fn new(k: usize, plot_seed: &[u8]) -> Self {
+    pub fn new(k: usize, plot_seed: PlotSeed, data_path: &Path) -> Self {
         PoSpace {
-            plot_seed: plot_seed.to_vec(),
+            plot_seed,
             k,
-            f1_calculator: F1Calculator::new(k, &plot_seed),
+            f1_calculator: F1Calculator::new(k, plot_seed),
+            data_path: data_path.to_owned(),
         }
     }
 
     pub fn run_phase_1(&mut self) {
         // Clear data folder
-        match remove_dir_all("data") {
+        match remove_dir_all(&self.data_path) {
             Ok(_) => {
                 info!("Cleaning data folder");
             }
@@ -50,10 +56,8 @@ impl PoSpace {
                 warn!("Cannot clean data folder: {}", e);
             }
         }
-        create_dir_all("data").ok();
+        create_dir_all(&self.data_path).ok();
         info!("Data dir cleaned");
-
-        let data_path = Path::new("data");
 
         let table_size = 1u64 << self.k;
 
@@ -83,7 +87,7 @@ impl PoSpace {
                     offset: None,
                 });
 
-                if buffer.len() % (1024 * 1024) == 0 {
+                if buffer.len() % (1024 * 1024 * 4) == 0 {
                     info!(
                         "[Table 1] Calculating progess: {:.3}%",
                         (buffer.len() + counter * *ENTRIES_PER_CHUNK) as f64
@@ -95,26 +99,27 @@ impl PoSpace {
                 if buffer.len() == *ENTRIES_PER_CHUNK {
                     counter += 1;
                     info!("[Table 1] Wrinting part {} to disk ...", counter);
-                    store_raw_table_part(1, counter, &buffer, data_path);
+                    store_raw_table_part(1, counter, &buffer, &self.data_path);
                     buffer.clear();
                 }
             }
 
             if buffer.len() > 0 {
                 info!("[Table 1] Wrinting part {} to disk ...", counter);
-                store_raw_table_part(1, counter, &buffer, data_path);
+                store_raw_table_part(1, counter, &buffer, &self.data_path);
             }
         });
 
         info!("[Table 1] Sorting table on disk ...");
-        sort_table_on_disk::<PlotEntry>(1, data_path, *ENTRIES_PER_CHUNK, self.k);
+        sort_table_on_disk::<PlotEntry>(1, &self.data_path, *ENTRIES_PER_CHUNK, self.k);
         info!("[Table 1] Sorting table on disk done");
         info!("[Table 1] Table ready");
 
         for table_index in 2..=NUMBER_OF_TABLES {
             info!("[Table {}] Calculating buckets ...", table_index);
             let mut file = File::open(
-                data_path.join(format!(table_final_filename_format!(), table_index - 1)),
+                self.data_path
+                    .join(format!(table_final_filename_format!(), table_index - 1)),
             )
             .unwrap();
             let file_size = file.metadata().unwrap().len() as usize;
@@ -227,13 +232,18 @@ impl PoSpace {
                     }
 
                     pos += 1;
+
+                    if match_counter >= (table_size * 2) as usize {
+                        warn!("Too many match, skipping...");
+                        break;
+                    }
                 }
 
                 part += 1;
 
                 if !buffer_to_write.is_empty() {
                     info!("[Table {}] Writing part {} to disk", table_index, part);
-                    store_raw_table_part(table_index, part, &buffer_to_write, data_path);
+                    store_raw_table_part(table_index, part, &buffer_to_write, &self.data_path);
                     buffer_to_write.clear();
                 }
 
@@ -250,10 +260,96 @@ impl PoSpace {
             );
 
             info!("[Table {}] Sorting table on disk ...", table_index);
-            sort_table_on_disk::<PlotEntry>(table_index, data_path, *ENTRIES_PER_CHUNK, self.k);
+            sort_table_on_disk::<PlotEntry>(
+                table_index,
+                &self.data_path,
+                *ENTRIES_PER_CHUNK,
+                self.k,
+            );
             info!("[Table {}] Sorting table on disk done", table_index);
             info!("[Table {}] Table ready", table_index);
         }
+    }
+
+    pub fn find_xvalues_from_target(&self, target: &BitsSlice) -> Vec<Vec<PlotEntry>> {
+        assert_eq!(target.len(), self.k);
+
+        let mut last_table = File::open(
+            self.data_path
+                .join(format!(table_final_filename_format!(), 7)),
+        )
+        .unwrap();
+        let file_size = last_table.metadata().unwrap().len() as usize;
+        let entry_size = plotentry_size(7, self.k);
+        let mut remaining_size = file_size;
+        let mut proofs = Vec::new();
+
+        while remaining_size > 0 {
+            let mut buffer;
+            if remaining_size > *ENTRIES_PER_CHUNK * entry_size {
+                buffer = vec![0; *ENTRIES_PER_CHUNK * entry_size];
+                last_table.read_exact(&mut buffer).unwrap();
+                remaining_size -= *ENTRIES_PER_CHUNK * entry_size;
+            } else {
+                buffer = Vec::new();
+                let amount = last_table.read_to_end(&mut buffer).unwrap();
+                remaining_size -= amount;
+            }
+
+            let entries: Vec<PlotEntry> = deserialize(&buffer, entry_size);
+
+            let potential_proof_entries: Vec<PlotEntry> = entries
+                .into_par_iter()
+                .filter(|entry| to_bits(entry.fx, self.k + PARAM_EXT)[..self.k] == target)
+                .collect();
+
+            for table7_entry in potential_proof_entries {
+                let mut entries_buffer = Vec::new();
+                let mut temp_buffer = Vec::new();
+                entries_buffer.push(table7_entry);
+
+                for i in (1..=6).rev() {
+                    for entry in &entries_buffer {
+                        let pos = entry.position.unwrap();
+                        let offset = entry.offset.unwrap();
+                        let entry_size = plotentry_size(i, self.k);
+
+                        let mut table_i = File::open(
+                            self.data_path
+                                .join(format!(table_final_filename_format!(), i)),
+                        )
+                        .unwrap();
+
+                        let mut buffer = vec![0u8; entry_size];
+
+                        table_i
+                            .seek(SeekFrom::Start(pos * entry_size as u64))
+                            .unwrap();
+                        table_i.read_exact(&mut buffer).unwrap();
+                        let left_entry: PlotEntry = bincode::deserialize(&buffer).unwrap();
+
+                        table_i
+                            .seek(SeekFrom::Start((pos + offset) * entry_size as u64))
+                            .unwrap();
+                        table_i.read_exact(&mut buffer).unwrap();
+                        let right_entry: PlotEntry = bincode::deserialize(&buffer).unwrap();
+
+                        temp_buffer.push(left_entry);
+                        temp_buffer.push(right_entry);
+                    }
+                    entries_buffer.clear();
+                    entries_buffer.append(&mut temp_buffer);
+
+                    let str = entries_buffer
+                        .iter()
+                        .map(|e| e.fx.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                }
+                proofs.push(entries_buffer);
+            }
+        }
+        return proofs;
     }
 }
 

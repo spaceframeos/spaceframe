@@ -186,11 +186,11 @@ mod tests {
     fn test_matching() {
         const TEST_K: usize = 12;
         const NUM_BUCKETS: u64 = (1u64 << (TEST_K + PARAM_EXT)) / PARAM_BC + 1;
-        let test_key: [u8; 32] = [
+        let test_key = [
             20, 2, 5, 4, 51, 52, 23, 84, 91, 10, 111, 12, 13, 24, 151, 16, 228, 211, 254, 45, 92,
             198, 204, 10, 9, 10, 11, 129, 139, 171, 15, 18,
         ];
-        let f1 = F1Calculator::new(TEST_K, &test_key);
+        let f1 = F1Calculator::new(TEST_K, test_key);
         let mut x: u64 = 0;
         let mut buckets = BTreeMap::new();
 

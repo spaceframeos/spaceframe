@@ -4,29 +4,36 @@ use chacha20::{
     ChaCha8, Key, Nonce,
 };
 
-use crate::{Bits, bits::BitsWrapper, constants::{PARAM_EXT, STATE_SIZE_BITS}, utils::{divmod}};
+use crate::core::PlotSeed;
+use crate::{
+    bits::BitsWrapper,
+    constants::{PARAM_EXT, STATE_SIZE_BITS},
+    utils::divmod,
+    Bits,
+};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct F1Calculator {
-    plot_seed: Vec<u8>,
+    plot_seed: PlotSeed,
     k: usize,
 }
 
 impl F1Calculator {
-    pub fn new(k: usize, plot_seed: &[u8]) -> Self {
-        F1Calculator {
-            k,
-            plot_seed: plot_seed.to_vec(),
-        }
+    pub fn new(k: usize, plot_seed: PlotSeed) -> Self {
+        F1Calculator { k, plot_seed }
     }
 
     pub fn calculate_f1(&self, x: &BitsWrapper) -> Bits {
         assert_eq!(x.bits.len(), self.k, "x must be k bits");
-        assert!(x.bits.len() >= PARAM_EXT, "x must greater or equal to {} bits", PARAM_EXT);
+        assert!(
+            x.bits.len() >= PARAM_EXT,
+            "x must greater or equal to {} bits",
+            PARAM_EXT
+        );
 
         let (q, r) = divmod(x.value * self.k as u64, STATE_SIZE_BITS as u64);
 
-        let key = Key::from_slice(self.plot_seed.as_slice());
+        let key = Key::from_slice(&self.plot_seed);
         let nonce = Nonce::from_slice(b"000000000000");
 
         let mut cipher = ChaCha8::new(&key, &nonce);

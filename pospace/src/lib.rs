@@ -10,6 +10,7 @@ pub mod proofs;
 pub mod sort;
 pub mod storage;
 pub mod utils;
+pub mod verifier;
 
 pub type Bits = BitVec<Lsb0, u8>;
 pub type BitsSlice = BitSlice<Lsb0, u8>;

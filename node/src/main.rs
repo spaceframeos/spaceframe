@@ -1,7 +1,10 @@
-use log::info;
+use log::*;
 use rand::{rngs::OsRng, RngCore};
 use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
 use spaceframe_pospace::core::PoSpace;
+use spaceframe_pospace::proofs::Prover;
+use spaceframe_pospace::verifier::Verifier;
+use std::convert::TryInto;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -15,6 +18,11 @@ struct Opts {
 enum Command {
     /// Initialize the proofs of space
     Init {
+        #[structopt(short = "k")]
+        space: usize,
+    },
+
+    Prove {
         #[structopt(short = "k")]
         space: usize,
     },
@@ -36,9 +44,27 @@ fn main() {
             let mut plot_seed = [0u8; 32];
             OsRng.fill_bytes(&mut plot_seed);
             info!("Plot seed generated");
-            // let plot_seed = b"abcdabcdabcdabcdabcdabcdabcdabcd";
-            let mut pos = PoSpace::new(space, &plot_seed);
+            let mut pos =
+                PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref());
             pos.run_phase_1();
+        }
+        Command::Prove { space } => {
+            let mut challenge = [0u8; 32];
+            OsRng.fill_bytes(&mut challenge);
+            let pos = PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref());
+            let prover = Prover::new(pos);
+            // prover.get_quality_string(challenge.as_ref());
+            let proofs = prover.retrieve_all_proofs(challenge.as_ref());
+
+            let verifier = Verifier::new();
+
+            for proof in proofs {
+                if verifier.verify_proof(&proof) {
+                    info!("Valid proof");
+                } else {
+                    warn!("Invalid proof");
+                }
+            }
         }
     }
 }
