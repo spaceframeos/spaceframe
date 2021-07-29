@@ -161,7 +161,7 @@ impl PoSpace {
                                     // Sanity check
                                     if matches.len() >= 10_000 {
                                         error!("Too many matches: {} is >= 10,000", matches.len());
-                                        panic!("Too many matches: {} is >= 10,000", matches.len());
+                                        return Err(PoSpaceError::TooManyMatches.into());
                                     }
 
                                     match_counter += matches.len();

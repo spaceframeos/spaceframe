@@ -45,9 +45,8 @@ fn main() -> Result<()> {
             let mut plot_seed = [0u8; 32];
             OsRng.fill_bytes(&mut plot_seed);
             info!("Plot seed generated");
-            let mut pos =
-                PoSpace::new(space, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref())
-                    .context("Failed to create proof of space instance")?;
+            let mut pos = PoSpace::new(space, plot_seed, "data".as_ref())
+                .context("Failed to create proof of space instance")?;
             pos.run_phase_1()
                 .context("Failed to run phase 1 of plotting")
         }

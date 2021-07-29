@@ -15,6 +15,9 @@ pub enum PoSpaceError {
 
     #[error("Offset is empty in plot entry")]
     EmptyOffset,
+
+    #[error("Too many matches found. Try with another plot seed or a larger k")]
+    TooManyMatches,
 }
 
 #[derive(Error, Debug)]
