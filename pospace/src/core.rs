@@ -51,7 +51,7 @@ impl PoSpace {
         })
     }
 
-    pub fn run_phase_1(&mut self) -> Result<()> {
+    pub fn run_phase_1(&self) -> Result<()> {
         // Clear data folder
         match remove_dir_all(&self.data_path) {
             Ok(_) => {
@@ -157,12 +157,6 @@ impl PoSpace {
                                     // Check for matches
                                     let matches =
                                         fx_calculator.find_matches(&left_bucket, &right_bucket);
-
-                                    // Sanity check
-                                    if matches.len() >= 10_000 {
-                                        error!("Too many matches: {} is >= 10,000", matches.len());
-                                        return Err(PoSpaceError::TooManyMatches.into());
-                                    }
 
                                     match_counter += matches.len();
 
