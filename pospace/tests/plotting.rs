@@ -16,6 +16,6 @@ fn test_plotting() {
     let dir = TempDir::new("spaceframe_plotting").unwrap();
     const TEST_K: usize = 14;
     let plot_seed = *b"aaaabbbbccccddddaaaabbbbccccdddd";
-    let mut pos = PoSpace::new(TEST_K, plot_seed, dir.path()).unwrap();
+    let pos = PoSpace::new(TEST_K, plot_seed, dir.path()).unwrap();
     pos.run_phase_1().unwrap();
 }

@@ -128,6 +128,34 @@ pub struct Match {
     pub right_index: usize,
 }
 
+pub fn matching_naive(l: u64, r: u64) -> bool {
+    let k_bc = PARAM_BC as i128;
+    let k_b = PARAM_B as i128;
+    let k_c = PARAM_C as i128;
+
+    let yl = l as i128;
+    let yr = r as i128;
+
+    let bl = yl / k_bc;
+    let br = yr / k_bc;
+
+    if bl + 1 != br {
+        return false;
+    }
+
+    for m in 0i128..PARAM_M as i128 {
+        if (((yr % k_bc) / k_c - ((yl % k_bc) / k_c)) - m) % k_b == 0 {
+            let mut c_diff = 2 * m + (bl % 2);
+            c_diff *= c_diff;
+
+            if (((yr % k_bc) % k_c - ((yl % k_bc) % k_c)) - c_diff) % k_c == 0 {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -135,34 +163,6 @@ mod tests {
     use crate::bits::{from_bits, to_bits, BitsWrapper};
     use crate::f1_calculator::F1Calculator;
     use std::collections::BTreeMap;
-
-    fn matching_naive(l: u64, r: u64) -> bool {
-        let k_bc = PARAM_BC as i128;
-        let k_b = PARAM_B as i128;
-        let k_c = PARAM_C as i128;
-
-        let yl = l as i128;
-        let yr = r as i128;
-
-        let bl = yl / k_bc;
-        let br = yr / k_bc;
-
-        if bl + 1 != br {
-            return false;
-        }
-
-        for m in 0i128..PARAM_M as i128 {
-            if (((yr % k_bc) / k_c - ((yl % k_bc) / k_c)) - m) % k_b == 0 {
-                let mut c_diff = 2 * m + (bl % 2);
-                c_diff *= c_diff;
-
-                if (((yr % k_bc) % k_c - ((yl % k_bc) % k_c)) - c_diff) % k_c == 0 {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 
     fn verify_fc(t: usize, k: usize, left: u64, right: u64, y1: u64, y: u64, c: Option<u64>) {
         let sizes = [1, 2, 4, 4, 3, 2];

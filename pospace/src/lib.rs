@@ -1,7 +1,6 @@
 use bitvec::prelude::*;
 
 pub mod bits;
-pub mod collation;
 pub mod constants;
 pub mod core;
 pub mod error;

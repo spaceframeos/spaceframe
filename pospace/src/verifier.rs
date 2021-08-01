@@ -1,8 +1,10 @@
 use crate::bits::{from_bits, to_bits, BitsWrapper};
+use crate::error::VerifierError;
 use crate::f1_calculator::F1Calculator;
 use crate::fx_calculator::FxCalculator;
 use crate::proofs::Proof;
 use crate::storage::PlotEntry;
+use anyhow::{Context, Result};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
 
@@ -17,21 +19,21 @@ impl Verifier {
         todo!()
     }
 
-    pub fn verify_proof(&self, proof: &Proof) -> bool {
+    pub fn verify_proof(&self, proof: &Proof) -> Result<()> {
         let f1_calculator = F1Calculator::new(proof.k, proof.plot_seed);
 
         let mut fx_values = Vec::new();
         let mut metadata = Vec::new();
 
+        if proof.x_values.len() != 64 {
+            return Err(VerifierError::InvalidXValuesCount.into());
+        }
+
         for x in &proof.x_values {
-            let fx = f1_calculator
-                .calculate_f1(&BitsWrapper::from(*x, proof.k))
-                .unwrap();
+            let fx = f1_calculator.calculate_f1(&BitsWrapper::from(*x, proof.k))?;
             fx_values.push(fx);
             metadata.push(to_bits(*x, proof.k));
         }
-
-        assert_eq!(64, fx_values.len());
 
         for table_index in 2..8 {
             let mut fx_calculator = FxCalculator::new(proof.k, table_index);
@@ -59,7 +61,8 @@ impl Verifier {
                     .len()
                     != 1
                 {
-                    return false;
+                    return Result::<()>::Err(VerifierError::InvalidProof.into())
+                        .context("Invalid matches");
                 }
 
                 let res = fx_calculator.calculate_fn(&fx_values[i], &metadata[i], &metadata[i + 1]);
@@ -70,6 +73,11 @@ impl Verifier {
             metadata = temp_metadata;
         }
 
-        return fx_values[0][0..proof.k] == proof.challenge.view_bits::<Lsb0>()[0..proof.k];
+        if fx_values[0][0..proof.k] == proof.challenge.view_bits::<Lsb0>()[0..proof.k] {
+            return Ok(());
+        } else {
+            return Result::<()>::Err(VerifierError::InvalidProof.into())
+                .context("Proof does not match with the challenge");
+        }
     }
 }

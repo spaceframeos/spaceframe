@@ -55,3 +55,12 @@ pub enum MergeChunkError {
     #[error("The minimum chunk is empty")]
     MinChunkIsEmpty,
 }
+
+#[derive(Error, Debug)]
+pub enum VerifierError {
+    #[error("A proof must contain 64 x-values")]
+    InvalidXValuesCount,
+
+    #[error("The proof is invalid")]
+    InvalidProof,
+}
