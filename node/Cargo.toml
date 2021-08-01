@@ -13,5 +13,9 @@ base64 = "0.13.0"
 log = "0.4.14"
 simplelog = "0.10.0"
 anyhow = "1.0.42"
+dialoguer = "0.8.0"
 
 spaceframe-pospace = { path = "../pospace" }
+spaceframe-ledger = { path = "../ledger" }
+spaceframe-storage = { path = "../storage" }
+spaceframe-crypto = { path = "../crypto" }

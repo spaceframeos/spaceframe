@@ -3,11 +3,12 @@ use crate::core::{PlotSeed, PoSpace};
 use crate::Bits;
 use anyhow::Result;
 use bitvec::view::BitView;
+use borsh::{BorshDeserialize, BorshSerialize};
 use log::debug;
 
 type QualityString = Vec<u8>;
 
-#[derive(Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Eq, PartialEq, Clone, Debug)]
 pub struct Proof {
     pub x_values: Vec<u64>,
     pub challenge: Vec<u8>,
@@ -50,7 +51,6 @@ impl Prover {
                 };
             })
             .collect::<Vec<Proof>>();
-        debug!("Proofs: {:?}", proofs);
         return Ok(proofs);
     }
 }

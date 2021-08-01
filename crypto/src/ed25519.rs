@@ -1,5 +1,6 @@
-use crate::error::{Result, SignatureError};
+use crate::error::SignatureError;
 use crate::traits::{Keypair, PrivateKey, PublicKey, Signature};
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::ed25519::signature::Signature as DalekSignatureTrait;
 use ed25519_dalek::ed25519::SIGNATURE_LENGTH;
@@ -81,6 +82,12 @@ impl PrivateKey for Ed25519PrivateKey {
     }
 }
 
+impl Ed25519PrivateKey {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Ok(Ed25519PrivateKey(DalekPrivateKey::from_bytes(bytes)?))
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Ed25519PublicKey(DalekPublicKey);
 
@@ -97,7 +104,7 @@ impl PublicKey for Ed25519PublicKey {
         hasher.update(message.as_ref());
         self.0
             .verify_prehashed(hasher, context, &signature.0)
-            .or(Err(SignatureError::InvalidSignature))
+            .or(Err(SignatureError::InvalidSignature.into()))
     }
 
     fn as_bytes(&self) -> &[u8] {

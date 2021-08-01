@@ -53,4 +53,7 @@ pub enum BlockError {
 
     #[error("block height must be greater than 1")]
     BlockInvalidHeight,
+
+    #[error("No valid proof found")]
+    NoProofFound,
 }

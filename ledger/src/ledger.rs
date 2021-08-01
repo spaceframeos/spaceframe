@@ -1,12 +1,10 @@
 use crate::account::Address;
-use crate::block::Block as Blk;
+use crate::block::Block;
 use crate::error::{BlockError, LedgerError};
-use crate::proof::PoSpaceProof;
 use crate::transaction::Tx;
 use anyhow::Result;
+use spaceframe_pospace::proofs::Prover;
 use std::collections::HashMap;
-
-pub type Block = Blk<PoSpaceProof>;
 
 #[derive(PartialEq, Debug)]
 pub struct Ledger {
@@ -78,6 +76,32 @@ impl Ledger {
 
         let blk = Block::new(next_height, transactions, previous_hash, None)?;
         self.check_transactions_balance(&blk)?;
+
+        self.blockchain.push(blk);
+        Ok(())
+    }
+
+    pub fn add_block_from_transactions_and_prove(
+        &mut self,
+        transactions: &[Tx],
+        prover: &Prover,
+    ) -> Result<()> {
+        let next_height = self.get_current_height() + 1;
+        let previous_hash = self
+            .blockchain
+            .last()
+            .ok_or(LedgerError::ChainNoGenesis)?
+            .hash
+            .as_slice();
+
+        if previous_hash.is_empty() {
+            return Err(LedgerError::ChainInvalidHashes.into());
+        }
+
+        let mut blk = Block::new(next_height, transactions, previous_hash, None)?;
+        self.check_transactions_balance(&blk)?;
+
+        blk.try_prove(prover)?;
 
         self.blockchain.push(blk);
         Ok(())

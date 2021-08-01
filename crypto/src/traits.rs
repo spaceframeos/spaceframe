@@ -1,4 +1,4 @@
-use crate::error::Result;
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use std::fmt::Debug;
 

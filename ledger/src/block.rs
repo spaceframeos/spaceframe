@@ -1,22 +1,22 @@
 use crate::error::{BlockError, TransactionError};
-use crate::proof::Proof;
 use crate::transaction::Tx;
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
+use spaceframe_pospace::proofs::{Proof, Prover};
 
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
-pub struct Block<T: Proof> {
+pub struct Block {
     pub height: u64,
     pub hash: Vec<u8>,
     pub previous_block_hash: Option<Vec<u8>>,
     pub transactions: Vec<Tx>,
     pub merkle_root: Option<Vec<u8>>,
-    pub proof: Option<T>,
+    pub proof: Option<Proof>,
 }
 
-impl<T: Proof> Block<T> {
+impl Block {
     pub fn genesis(initial_transactions: &[Tx]) -> Result<Self> {
         for tx in initial_transactions {
             if tx.signature.is_some() {
@@ -45,7 +45,7 @@ impl<T: Proof> Block<T> {
         height: u64,
         transactions: &[Tx],
         previous_block_hash: &[u8],
-        proof: Option<T>,
+        proof: Option<Proof>,
     ) -> Result<Self> {
         // Check height
         if height < 2 {
@@ -108,6 +108,16 @@ impl<T: Proof> Block<T> {
         self.previous_block_hash.is_none() && self.height == 1
     }
 
+    pub fn try_prove(&mut self, prover: &Prover) -> Result<()> {
+        let proofs = prover.retrieve_all_proofs(&self.hash)?;
+        if proofs.len() > 0 {
+            self.proof = Some(proofs[0].clone());
+            return Ok(());
+        } else {
+            return Err(BlockError::NoProofFound.into());
+        }
+    }
+
     fn calculate_hash(&self) -> Result<BlockHash> {
         let mut bytes = self.height.to_be_bytes().to_vec();
 
@@ -151,15 +161,12 @@ struct BlockHash {
 
 #[cfg(test)]
 mod tests {
-    use super::Block as Blk;
+    use super::*;
     use crate::account::Address;
-    use crate::proof::PoSpaceProof;
     use crate::transaction::Tx;
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
     use spaceframe_crypto::hash::Hash;
     use spaceframe_crypto::traits::Keypair;
-
-    type Block = Blk<PoSpaceProof>;
 
     #[test]
     fn test_new_genesis_no_transaction() {

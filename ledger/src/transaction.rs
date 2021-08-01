@@ -106,13 +106,14 @@ impl Display for Tx {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[from: {}, to: {}, amount: {}, datetime: {}]",
+            "[from: {}, to: {}, amount: {}, fee: {}, datetime: {}]",
             self.signature
                 .as_ref()
                 .map_or(String::from("none"), |x| Address::from(x.pubkey)
                     .to_string()),
             self.payload.to_address,
             self.payload.amount,
+            self.payload.fee,
             DateTime::<Utc>::from_utc(
                 NaiveDateTime::from_timestamp(self.payload.timestamp, 0),
                 Utc

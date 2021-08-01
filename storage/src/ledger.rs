@@ -1,10 +1,11 @@
+use spaceframe_ledger::block::Block;
 use spaceframe_ledger::ledger::Ledger;
 
 use crate::error::StorageError;
 use anyhow::Result;
-use borsh::BorshSerialize;
-use std::fs::File;
-use std::io::Write;
+use borsh::{BorshDeserialize, BorshSerialize};
+use std::fs::{read_dir, File};
+use std::io::{Read, Write};
 use std::path::Path;
 
 pub fn write_to_disk(ledger: &Ledger, path: &Path) -> Result<()> {
@@ -23,6 +24,33 @@ pub fn write_to_disk(ledger: &Ledger, path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn read_from_disk(path: &Path) -> Result<Ledger> {
+    if !path.is_dir() {
+        return Err(StorageError::PathIsNotDirectory.into());
+    }
+    let blocks = read_dir(path)?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|e| {
+            return e.is_file()
+                && e.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("block_");
+        })
+        .map(|e| {
+            let mut file = File::open(&e)?;
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+            let block = Block::try_from_slice(&buffer)?;
+            return Ok(block);
+        })
+        .collect::<Result<Vec<Block>>>()?;
+
+    return Ok(Ledger { blockchain: blocks });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,7 +58,7 @@ mod tests {
     use spaceframe_crypto::ed25519::Ed25519KeyPair;
     use spaceframe_crypto::traits::Keypair;
     use spaceframe_ledger::account::Address;
-    use spaceframe_ledger::ledger::Block;
+    use spaceframe_ledger::block::Block;
     use spaceframe_ledger::transaction::Tx;
     use std::io::Read;
     use tempdir::TempDir;

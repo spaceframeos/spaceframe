@@ -1,9 +1,23 @@
+use std::fs::create_dir_all;
+use std::path::Path;
+
 use anyhow::Context;
 use anyhow::Result;
+use dialoguer::console::Term;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::Input;
+use dialoguer::Select;
 use log::*;
 use rand::Rng;
 use rand::{rngs::OsRng, RngCore};
 use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
+use spaceframe_crypto::ed25519::Ed25519KeyPair;
+use spaceframe_crypto::traits::Keypair;
+use spaceframe_ledger::account::Address;
+use spaceframe_ledger::block::Block;
+use spaceframe_ledger::ledger::Ledger;
+use spaceframe_ledger::transaction;
+use spaceframe_ledger::transaction::Tx;
 use spaceframe_pospace::constants::PARAM_BC;
 use spaceframe_pospace::constants::PARAM_EXT;
 use spaceframe_pospace::core::PoSpace;
@@ -14,6 +28,11 @@ use spaceframe_pospace::proofs::Proof;
 use spaceframe_pospace::proofs::Prover;
 use spaceframe_pospace::storage::PlotEntry;
 use spaceframe_pospace::verifier::Verifier;
+use spaceframe_storage::error::StorageError;
+use spaceframe_storage::keypair::read_all_keypair;
+use spaceframe_storage::keypair::store_keypair;
+use spaceframe_storage::ledger::read_from_disk;
+use spaceframe_storage::ledger::write_to_disk;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -31,16 +50,19 @@ enum Command {
         space: usize,
     },
 
+    /// Used for benchmarking the proof of space proving
     Prove {
         #[structopt(short = "k")]
         space: usize,
     },
 
+    /// Used for benchmarking the proof of space verifing
     Verify {
         #[structopt(short = "k")]
         space: usize,
     },
 
+    /// Used for benchmarking the proof of space matching functions
     Match {
         #[structopt(short = "k")]
         k: usize,
@@ -48,6 +70,12 @@ enum Command {
         /// Use naive matching function
         #[structopt(short = "n")]
         naive: bool,
+    },
+
+    /// Interact with a demo blockchain in the console
+    Demo {
+        #[structopt(short = "k")]
+        k: usize,
     },
 }
 
@@ -369,6 +397,168 @@ fn main() -> Result<()> {
             verifier
                 .verify_proof(&proof)
                 .context("Could not verify the proof")
+        }
+        Command::Demo { k } => {
+            const INITIAL_KEYPAIRS: usize = 3;
+            const INITIAL_AMOUNT: u64 = 100;
+
+            let chain_path = Path::new("blockchain_data");
+            let keypairs_path = Path::new("keypair_data");
+
+            let pospace = PoSpace::new(k, *b"aaaabbbbccccddddaaaabbbbccccdddd", "data".as_ref())?;
+            let prover = Prover::new(pospace);
+
+            let mut keypairs = match read_all_keypair(keypairs_path) {
+                Ok(keypairs) => keypairs,
+                Err(_) => {
+                    create_dir_all(keypairs_path).ok();
+                    Vec::new()
+                }
+            };
+
+            let mut ledger = match read_from_disk(chain_path) {
+                Ok(ledger) => ledger,
+                Err(_) => {
+                    info!("No existing ledger found. Creating a new one.");
+                    create_dir_all(chain_path)?;
+                    if keypairs.len() == 0 {
+                        info!(
+                            "No account found. Creating {} new accounts with {} SF.",
+                            INITIAL_KEYPAIRS, INITIAL_AMOUNT
+                        );
+                        for _ in 0..INITIAL_KEYPAIRS {
+                            let keypair = Ed25519KeyPair::generate();
+                            store_keypair(&keypair, keypairs_path)?;
+                            keypairs.push(keypair);
+                        }
+                    }
+                    let ledger = Ledger::new(
+                        &keypairs
+                            .iter()
+                            .map(|k| Tx::genesis(&Address::from(k.public), INITIAL_AMOUNT))
+                            .collect::<Vec<Tx>>(),
+                    )?;
+                    write_to_disk(&ledger, chain_path)?;
+                    ledger
+                }
+            };
+
+            loop {
+                let selection = Select::with_theme(&ColorfulTheme::default())
+                    .items(&[
+                        "Add keypair",
+                        "Add new block",
+                        "Show account balances",
+                        "Show blocks",
+                        "Exit",
+                    ])
+                    .default(0)
+                    .interact_on(&Term::stderr())?;
+
+                match selection {
+                    0 => {
+                        let keypair = Ed25519KeyPair::generate();
+                        store_keypair(&keypair, keypairs_path)?;
+                        keypairs.push(keypair);
+                        info!("New keypair generated and stored");
+                    }
+                    1 => {
+                        let mut transactions_buffer = Vec::new();
+                        loop {
+                            if transactions_buffer.len() > 0 {
+                                println!("Transactions to add :");
+                                for tx in &transactions_buffer {
+                                    println!("{}", tx);
+                                }
+                            }
+
+                            let selection = Select::with_theme(&ColorfulTheme::default())
+                                .items(&[
+                                    "Add new transaction",
+                                    "Prove block and add to the blockchain",
+                                    "Cancel",
+                                ])
+                                .default(0)
+                                .interact_on(&Term::stderr())?;
+                            match selection {
+                                0 => {
+                                    let sender_index =
+                                        Select::with_theme(&ColorfulTheme::default())
+                                            .items(
+                                                &keypairs
+                                                    .iter()
+                                                    .map(|k| Address::from(k.public).to_string())
+                                                    .collect::<Vec<String>>(),
+                                            )
+                                            .default(0)
+                                            .with_prompt("Choose the sender")
+                                            .interact_on(&Term::stderr())?;
+                                    let receiver_index =
+                                        Select::with_theme(&ColorfulTheme::default())
+                                            .items(
+                                                &keypairs
+                                                    .iter()
+                                                    .map(|k| Address::from(k.public).to_string())
+                                                    .collect::<Vec<String>>(),
+                                            )
+                                            .default(0)
+                                            .with_prompt("Choose the receiver")
+                                            .interact_on(&Term::stderr())?;
+                                    let amount = Input::new()
+                                        .with_prompt("Choose the amount")
+                                        .validate_with(
+                                            |input: &String| -> core::result::Result<(), &str> {
+                                                return match input.parse::<u64>() {
+                                                    Ok(_) => Ok(()),
+                                                    Err(_) => Err("Please enter a number"),
+                                                };
+                                            },
+                                        )
+                                        .interact_text()?;
+                                    let amount = amount.parse()?;
+                                    match Tx::new(
+                                        &keypairs[sender_index],
+                                        &Address::from(keypairs[receiver_index].public),
+                                        amount,
+                                        0,
+                                    ) {
+                                        Ok(tx) => transactions_buffer.push(tx),
+                                        Err(e) => error!("Could not create transaction: {}", e),
+                                    };
+                                }
+                                1 => {
+                                    match ledger.add_block_from_transactions_and_prove(
+                                        &transactions_buffer,
+                                        &prover,
+                                    ) {
+                                        Ok(()) => {
+                                            info!("Block successfully added to the ledger");
+                                            write_to_disk(&ledger, chain_path)?;
+                                            break;
+                                        }
+                                        Err(e) => error!("Could not add block to ledger: {}", e),
+                                    }
+                                }
+                                2 => break,
+                                _ => return Err(anyhow::anyhow!("Invalid option")),
+                            }
+                        }
+                    }
+                    2 => {
+                        println!("");
+                        for kp in &keypairs {
+                            let address = Address::from(kp.public);
+                            let balance = ledger.get_balance(&address)?;
+                            println!("{}: {}", address, balance);
+                        }
+                    }
+                    3 => {}
+                    4 => {
+                        return Ok(());
+                    }
+                    _ => return Err(anyhow::anyhow!("Invalid option")),
+                }
+            }
         }
     }
 }

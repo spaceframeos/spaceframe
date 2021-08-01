@@ -13,3 +13,5 @@ perf.data.old
 
 data/
 test_data/
+blockchain_data/
+keypair_data/

@@ -18,3 +18,4 @@ thiserror = "1.0"
 anyhow = "1.0"
 spaceframe-crypto = { path="../crypto" }
 spaceframe-merkletree = { path = "../merkletree" }
+spaceframe-pospace = { path = "../pospace" }
