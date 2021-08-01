@@ -1454,14 +1454,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spaceframe-config"
-version = "0.1.0"
-
-[[package]]
-name = "spaceframe-consensus"
-version = "0.1.0"
-
-[[package]]
 name = "spaceframe-crypto"
 version = "0.1.0"
 dependencies = [
@@ -1504,10 +1496,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spaceframe-mempool"
-version = "0.1.0"
-
-[[package]]
 name = "spaceframe-merkletree"
 version = "0.1.0"
 dependencies = [
@@ -1515,10 +1503,6 @@ dependencies = [
  "hex",
  "spaceframe-crypto",
 ]
-
-[[package]]
-name = "spaceframe-network"
-version = "0.1.0"
 
 [[package]]
 name = "spaceframe-node"

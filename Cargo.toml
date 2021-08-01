@@ -1,14 +1,10 @@
 [workspace]
 members = [
-    "consensus",
     "crypto",
-    "config",
     "pospace",
     "node",
     "grpc",
     "storage",
-    "network",
-    "mempool",
     "ledger",
     "merkletree",
     "powork",
