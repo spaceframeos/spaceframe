@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display};
+
 use crate::account::Address;
 use thiserror::Error;
 
@@ -17,6 +19,9 @@ pub enum LedgerError {
 
     #[error("error occured while calculating balance of {0:?}")]
     LedgerBalanceError(Option<Address>),
+
+    #[error("Balance check returns errors: {0}")]
+    BalanceCheckWithErrors(String),
 }
 
 #[derive(Error, Debug)]

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::error::{BlockError, TransactionError};
 use crate::transaction::Tx;
 use anyhow::Result;

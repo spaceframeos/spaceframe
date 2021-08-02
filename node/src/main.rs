@@ -3,6 +3,9 @@ use std::path::Path;
 
 use anyhow::Context;
 use anyhow::Result;
+use console::style;
+use console::truncate_str;
+use console::Emoji;
 use dialoguer::console::Term;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
@@ -545,14 +548,58 @@ fn main() -> Result<()> {
                         }
                     }
                     2 => {
-                        println!("");
+                        println!("Accounts:");
                         for kp in &keypairs {
                             let address = Address::from(kp.public);
                             let balance = ledger.get_balance(&address)?;
-                            println!("{}: {}", address, balance);
+                            println!("{}: {} SF", address, balance);
                         }
                     }
-                    3 => {}
+                    3 => {
+                        let verifier = Verifier::new();
+                        for block in &ledger.blockchain {
+                            let is_proof_valid = block
+                                .proof
+                                .as_ref()
+                                .map_or(false, |p| verifier.verify_proof(&p).is_ok());
+                            println!("Height: {}", block.height);
+                            println!(
+                                "Hash: {}",
+                                truncate_str(&hex::encode(&block.hash), 20, "...")
+                            );
+                            block.previous_block_hash.as_ref().map(|h| {
+                                println!(
+                                    "Prev hash: {}",
+                                    truncate_str(&hex::encode(&h), 20, "...")
+                                );
+                            });
+                            println!(
+                                "Proof: {}",
+                                if is_proof_valid {
+                                    style(Emoji("✔ Valid", "Valid")).green()
+                                } else {
+                                    if block.is_genesis() {
+                                        style(Emoji("✔ None (genesis)", "None (genesis)")).green()
+                                    } else {
+                                        style(Emoji("✘ Not valid", "Not valid")).red()
+                                    }
+                                }
+                            );
+                            println!(
+                                "Transactions: {}",
+                                if block.transactions.len() == 0 {
+                                    "None"
+                                } else {
+                                    ""
+                                }
+                            );
+                            for tx in &block.transactions {
+                                println!("  {}", tx);
+                            }
+                            println!("---------------------------");
+                        }
+                        println!("{} blocks in the chain", ledger.blockchain.len());
+                    }
                     4 => {
                         return Ok(());
                     }

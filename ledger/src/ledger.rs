@@ -123,8 +123,20 @@ impl Ledger {
             *balances.get_mut(to_addr).unwrap() += tx.payload.amount as i128;
         }
 
-        if balances.iter().any(|a| a.1 < &0i128) {
-            return Err(LedgerError::LedgerBalanceError(None).into());
+        let mut errors = String::new();
+
+        for (address, balance) in &balances {
+            if *balance < 0 {
+                errors.push_str(&format!(
+                    "\n  account {} has not enough money (current balance: {})",
+                    *address,
+                    self.get_balance(address)?
+                ));
+            }
+        }
+
+        if errors.len() > 0 {
+            return Err(LedgerError::BalanceCheckWithErrors(errors).into());
         }
 
         Ok(())
