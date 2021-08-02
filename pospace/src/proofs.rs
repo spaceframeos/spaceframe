@@ -4,7 +4,6 @@ use crate::Bits;
 use anyhow::Result;
 use bitvec::view::BitView;
 use borsh::{BorshDeserialize, BorshSerialize};
-use log::debug;
 
 type QualityString = Vec<u8>;
 
