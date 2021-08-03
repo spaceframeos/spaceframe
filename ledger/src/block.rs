@@ -2,6 +2,7 @@ use crate::error::{BlockError, TransactionError};
 use crate::transaction::Tx;
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
+use chrono::Utc;
 use spaceframe_crypto::hash::Hash;
 use spaceframe_merkletree::MerkleTree;
 use spaceframe_pospace::proofs::{Proof, Prover};
@@ -9,6 +10,7 @@ use spaceframe_pospace::proofs::{Proof, Prover};
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
 pub struct Block {
     pub height: u64,
+    pub timestamp: i64,
     pub hash: Vec<u8>,
     pub previous_block_hash: Option<Vec<u8>>,
     pub transactions: Vec<Tx>,
@@ -26,6 +28,7 @@ impl Block {
 
         let mut blk = Block {
             height: 1,
+            timestamp: Utc::now().timestamp(),
             hash: Hash::zero().to_vec(),
             transactions: initial_transactions.to_vec(),
             previous_block_hash: None,
@@ -59,6 +62,7 @@ impl Block {
 
         let mut block = Block {
             height,
+            timestamp: Utc::now().timestamp(),
             transactions: transactions.to_vec(),
             previous_block_hash: Some(previous_block_hash.to_vec()),
             merkle_root: None,
@@ -120,6 +124,7 @@ impl Block {
 
     fn calculate_hash(&self) -> Result<BlockHash> {
         let mut bytes = self.height.to_be_bytes().to_vec();
+        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
 
         if self.previous_block_hash.is_some() {
             bytes.extend_from_slice(&self.previous_block_hash.as_deref().unwrap());

@@ -26,7 +26,9 @@ pub fn write_to_disk(ledger: &Ledger, path: &Path) -> Result<()> {
 
 pub fn read_from_disk(path: &Path) -> Result<Ledger> {
     if !path.is_dir() {
-        return Err(StorageError::PathIsNotDirectory.into());
+        return Ok(Ledger {
+            blockchain: Vec::new(),
+        });
     }
     let blocks = read_dir(path)?
         .filter_map(Result::ok)

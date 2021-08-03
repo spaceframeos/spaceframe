@@ -18,31 +18,28 @@ impl Ledger {
         Ok(Ledger { blockchain })
     }
 
-    // pub fn verify(&self) -> Result<()> {
-    //     for i in 0..self.blockchain.len() {
-    //         if i > 0 {
-    //             // Check height
-    //             if self.blockchain[i].height != self.blockchain[i - 1].height + 1 {
-    //                 return Err(LedgerError::ChainInvalidHeights);
-    //             }
-    //
-    //             // Check previous hash
-    //             if self.blockchain[i]
-    //                 .previous_block_hash
-    //                 .as_deref()
-    //                 .ok_or(LedgerError::ChainPreviousHashMissing)?
-    //                 != self.blockchain[i - 1].hash.as_slice()
-    //             {
-    //                 return Err(LedgerError::ChainInvalidHashes);
-    //             }
-    //         }
-    //
-    //         self.blockchain[i].verify()?;
-    //
-    //     }
-    //
-    //     Ok(())
-    // }
+    pub fn verify(&self) -> Result<()> {
+        for i in 1..self.blockchain.len() {
+            // Check height
+            if self.blockchain[i].height != self.blockchain[i - 1].height + 1 {
+                return Err(LedgerError::ChainInvalidHeights.into());
+            }
+
+            // Check previous hash
+            if self.blockchain[i]
+                .previous_block_hash
+                .as_deref()
+                .ok_or(LedgerError::ChainPreviousHashMissing)?
+                != self.blockchain[i - 1].hash.as_slice()
+            {
+                return Err(LedgerError::ChainInvalidHashes.into());
+            }
+
+            self.blockchain[i].verify()?;
+        }
+
+        Ok(())
+    }
 
     pub fn add_block(&mut self, block: Block) -> Result<()> {
         let next_height = self.get_current_height() + 1;

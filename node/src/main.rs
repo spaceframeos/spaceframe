@@ -17,6 +17,7 @@ use simplelog::{ColorChoice, Config, LevelFilter, TermLogger, TerminalMode};
 use spaceframe_crypto::ed25519::Ed25519KeyPair;
 use spaceframe_crypto::traits::Keypair;
 use spaceframe_ledger::account::Address;
+use spaceframe_ledger::error::BlockError;
 use spaceframe_ledger::ledger::Ledger;
 use spaceframe_ledger::transaction::Tx;
 use spaceframe_pospace::constants::PARAM_BC;
@@ -417,29 +418,35 @@ fn main() -> Result<()> {
             };
 
             let mut ledger = match read_from_disk(chain_path) {
-                Ok(ledger) => ledger,
-                Err(_) => {
-                    info!("No existing ledger found. Creating a new one.");
-                    create_dir_all(chain_path)?;
-                    if keypairs.len() == 0 {
-                        info!(
-                            "No account found. Creating {} new accounts with {} SF.",
-                            INITIAL_KEYPAIRS, INITIAL_AMOUNT
-                        );
-                        for _ in 0..INITIAL_KEYPAIRS {
-                            let keypair = Ed25519KeyPair::generate();
-                            store_keypair(&keypair, keypairs_path)?;
-                            keypairs.push(keypair);
+                Ok(ledger) => {
+                    if ledger.blockchain.len() == 0 {
+                        info!("No existing ledger found. Creating a new one.");
+                        create_dir_all(chain_path)?;
+                        if keypairs.len() == 0 {
+                            info!(
+                                "No account found. Creating {} new accounts with {} SF.",
+                                INITIAL_KEYPAIRS, INITIAL_AMOUNT
+                            );
+                            for _ in 0..INITIAL_KEYPAIRS {
+                                let keypair = Ed25519KeyPair::generate();
+                                store_keypair(&keypair, keypairs_path)?;
+                                keypairs.push(keypair);
+                            }
                         }
+                        let ledger = Ledger::new(
+                            &keypairs
+                                .iter()
+                                .map(|k| Tx::genesis(&Address::from(k.public), INITIAL_AMOUNT))
+                                .collect::<Vec<Tx>>(),
+                        )?;
+                        write_to_disk(&ledger, chain_path)?;
+                        ledger
+                    } else {
+                        ledger
                     }
-                    let ledger = Ledger::new(
-                        &keypairs
-                            .iter()
-                            .map(|k| Tx::genesis(&Address::from(k.public), INITIAL_AMOUNT))
-                            .collect::<Vec<Tx>>(),
-                    )?;
-                    write_to_disk(&ledger, chain_path)?;
-                    ledger
+                }
+                Err(e) => {
+                    return Err(e.context("Failed to read the blockchain from disk"));
                 }
             };
 
@@ -464,7 +471,7 @@ fn main() -> Result<()> {
                     }
                     1 => {
                         let mut transactions_buffer = Vec::new();
-                        loop {
+                        'new_block_loop: loop {
                             if transactions_buffer.len() > 0 {
                                 println!("Transactions to add :");
                                 for tx in &transactions_buffer {
@@ -526,7 +533,7 @@ fn main() -> Result<()> {
                                         Err(e) => error!("Could not create transaction: {}", e),
                                     };
                                 }
-                                1 => {
+                                1 => loop {
                                     match ledger.add_block_from_transactions_and_prove(
                                         &transactions_buffer,
                                         &prover,
@@ -534,18 +541,27 @@ fn main() -> Result<()> {
                                         Ok(()) => {
                                             info!("Block successfully added to the ledger");
                                             write_to_disk(&ledger, chain_path)?;
-                                            break;
+                                            break 'new_block_loop;
                                         }
-                                        Err(e) => error!("Could not add block to ledger: {}", e),
+                                        Err(e) => match e.downcast_ref::<BlockError>() {
+                                            Some(BlockError::NoProofFound) => {
+                                                warn!("No proof found. Trying again ...");
+                                                continue;
+                                            }
+                                            _ => {
+                                                error!("{}", e);
+                                                break;
+                                            }
+                                        },
                                     }
-                                }
+                                },
                                 2 => break,
                                 _ => return Err(anyhow::anyhow!("Invalid option")),
                             }
                         }
                     }
                     2 => {
-                        println!("Accounts:");
+                        println!("\nAccounts:");
                         for kp in &keypairs {
                             let address = Address::from(kp.public);
                             let balance = ledger.get_balance(&address)?;
@@ -553,6 +569,7 @@ fn main() -> Result<()> {
                         }
                     }
                     3 => {
+                        println!("");
                         let verifier = Verifier::new();
                         for block in &ledger.blockchain {
                             let is_proof_valid = block
@@ -596,6 +613,14 @@ fn main() -> Result<()> {
                             println!("---------------------------");
                         }
                         println!("{} blocks in the chain", ledger.blockchain.len());
+                        println!(
+                            "Is the blockchain valid: {}",
+                            if ledger.verify().is_ok() {
+                                style(Emoji("✔ Valid", "Valid")).green()
+                            } else {
+                                style(Emoji("✘ Not valid", "Not valid")).red()
+                            }
+                        );
                     }
                     4 => {
                         return Ok(());
